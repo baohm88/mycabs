@@ -1,0 +1,85 @@
+using MongoDB.Bson;
+using MongoDB.Driver;
+using MyCabs.Domain.Entities;
+using MyCabs.Domain.Interfaces;
+using MyCabs.Infrastructure.Persistence;
+using MyCabs.Infrastructure.Startup;
+
+namespace MyCabs.Infrastructure.Repositories;
+
+public class CompanyRepository : ICompanyRepository, IIndexInitializer
+{
+    private readonly IMongoCollection<Company> _col;
+    public CompanyRepository(IMongoContext ctx)
+    {
+        _col = ctx.GetCollection<Company>("companies");
+    }
+
+    public async Task<(IEnumerable<Company> Items, long Total)> FindAsync(
+        int page, int pageSize, string? search, string? plan, string? serviceType, string? sort)
+    {
+        var filter = Builders<Company>.Filter.Empty;
+        var fb = Builders<Company>.Filter;
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var s = search.Trim();
+            filter &= (fb.Regex(x => x.Name, new BsonRegularExpression(s, "i"))
+                    | fb.Regex(x => x.Description, new BsonRegularExpression(s, "i")));
+        }
+        if (!string.IsNullOrWhiteSpace(plan))
+            filter &= fb.Eq(x => x.Membership!.Plan, plan);
+        if (!string.IsNullOrWhiteSpace(serviceType))
+            filter &= fb.ElemMatch(x => x.Services, sv => sv.Type == serviceType);
+
+        // sort: "-createdAt" | "createdAt" | "name" | "-name"
+        SortDefinition<Company> sortDef = Builders<Company>.Sort.Descending(x => x.CreatedAt);
+        if (!string.IsNullOrWhiteSpace(sort))
+        {
+            var s = sort.Trim();
+            bool desc = s.StartsWith("-");
+            var field = desc ? s.Substring(1) : s;
+            sortDef = field switch
+            {
+                "name" => desc ? Builders<Company>.Sort.Descending(x => x.Name) : Builders<Company>.Sort.Ascending(x => x.Name),
+                _ => desc ? Builders<Company>.Sort.Descending(x => x.CreatedAt) : Builders<Company>.Sort.Ascending(x => x.CreatedAt)
+            };
+        }
+
+        var total = await _col.CountDocumentsAsync(filter);
+        var items = await _col.Find(filter)
+            .Sort(sortDef)
+            .Skip((page - 1) * pageSize)
+            .Limit(pageSize)
+            .ToListAsync();
+
+        return (items, total);
+    }
+
+    public async Task<Company?> GetByIdAsync(string id)
+    {
+        if (!ObjectId.TryParse(id, out var oid)) return null;
+        return await _col.Find(x => x.Id == oid).FirstOrDefaultAsync();
+    }
+
+    public Task AddServiceAsync(string companyId, CompanyServiceItem item)
+    {
+        if (!ObjectId.TryParse(companyId, out var oid))
+            throw new ArgumentException("Invalid companyId", nameof(companyId));
+
+        var update = Builders<Company>.Update
+            .Push(x => x.Services, item)
+            .Set(x => x.UpdatedAt, DateTime.UtcNow);
+
+        return _col.UpdateOneAsync(x => x.Id == oid, update);
+    }
+
+    public async Task EnsureIndexesAsync()
+    {
+        var idx1 = new CreateIndexModel<Company>(Builders<Company>.IndexKeys.Ascending(x => x.Name));
+        var idx2 = new CreateIndexModel<Company>(Builders<Company>.IndexKeys.Ascending(x => x.CreatedAt));
+        var idx3 = new CreateIndexModel<Company>(Builders<Company>.IndexKeys.Ascending(x => x.Membership!.Plan));
+        var idx4 = new CreateIndexModel<Company>(Builders<Company>.IndexKeys.Ascending("services.type"));
+        await _col.Indexes.CreateManyAsync(new[] { idx1, idx2, idx3, idx4 });
+    }
+}

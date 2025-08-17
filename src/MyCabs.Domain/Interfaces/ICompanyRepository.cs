@@ -1,0 +1,13 @@
+using MyCabs.Domain.Entities;
+
+namespace MyCabs.Domain.Interfaces;
+
+public interface ICompanyRepository
+{
+    Task<(IEnumerable<Company> Items, long Total)> FindAsync(
+        int page, int pageSize, string? search, string? plan, string? serviceType, string? sort);
+
+    Task<Company?> GetByIdAsync(string id);
+    Task AddServiceAsync(string companyId, CompanyServiceItem item);
+    Task EnsureIndexesAsync();
+}
