@@ -73,13 +73,20 @@ builder.Services.Configure<MongoSettings>(builder.Configuration.GetSection("Mong
 builder.Services.AddSingleton<IMongoContext, MongoContext>();
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<UserRepository>();
-
+builder.Services.AddScoped<IDriverRepository, DriverRepository>();
+builder.Services.AddScoped<IApplicationRepository, ApplicationRepository>();
+builder.Services.AddScoped<IInvitationRepository, InvitationRepository>();
 builder.Services.AddScoped<ICompanyRepository, CompanyRepository>();
-builder.Services.AddScoped<ICompanyService, CompanyService>();
+
 
 builder.Services.AddScoped<DbInitializer>();
 builder.Services.AddScoped<IIndexInitializer, UserRepository>();
 builder.Services.AddScoped<IIndexInitializer, CompanyRepository>();
+builder.Services.AddScoped<IIndexInitializer, DriverRepository>();
+builder.Services.AddScoped<IIndexInitializer, ApplicationRepository>();
+builder.Services.AddScoped<IIndexInitializer, InvitationRepository>();
+
+
 
 builder.Services.AddSingleton<IJwtTokenService, JwtTokenService>();
 
@@ -120,8 +127,10 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 builder.Services.AddAuthorization();
 
 // Services
-builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddSingleton<IJwtTokenService, JwtTokenService>();
+builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<ICompanyService, CompanyService>();
+builder.Services.AddScoped<IDriverService, DriverService>();
 
 var app = builder.Build();
 

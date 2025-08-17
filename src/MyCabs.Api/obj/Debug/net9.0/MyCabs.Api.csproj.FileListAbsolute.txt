@@ -62,3 +62,4 @@
 /Users/baoha/Desktop/Aptech/sem3/mycabs/src/MyCabs.Api/obj/Debug/net9.0/MyCabs.Api.pdb
 /Users/baoha/Desktop/Aptech/sem3/mycabs/src/MyCabs.Api/obj/Debug/net9.0/MyCabs.Api.genruntimeconfig.cache
 /Users/baoha/Desktop/Aptech/sem3/mycabs/src/MyCabs.Api/obj/Debug/net9.0/ref/MyCabs.Api.dll
+/Users/baoha/Desktop/Aptech/sem3/mycabs/src/MyCabs.Api/obj/Debug/net9.0/MyCabs.Api.sourcelink.json
