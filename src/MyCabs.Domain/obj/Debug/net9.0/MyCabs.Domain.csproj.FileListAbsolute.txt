@@ -10,3 +10,4 @@
 /Users/baoha/Desktop/Aptech/sem3/mycabs/src/MyCabs.Domain/obj/Debug/net9.0/refint/MyCabs.Domain.dll
 /Users/baoha/Desktop/Aptech/sem3/mycabs/src/MyCabs.Domain/obj/Debug/net9.0/MyCabs.Domain.pdb
 /Users/baoha/Desktop/Aptech/sem3/mycabs/src/MyCabs.Domain/obj/Debug/net9.0/ref/MyCabs.Domain.dll
+/Users/baoha/Desktop/Aptech/sem3/mycabs/src/MyCabs.Domain/obj/Debug/net9.0/MyCabs.Domain.sourcelink.json

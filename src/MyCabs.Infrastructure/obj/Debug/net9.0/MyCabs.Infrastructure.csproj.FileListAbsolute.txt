@@ -13,3 +13,4 @@
 /Users/baoha/Desktop/Aptech/sem3/mycabs/src/MyCabs.Infrastructure/obj/Debug/net9.0/refint/MyCabs.Infrastructure.dll
 /Users/baoha/Desktop/Aptech/sem3/mycabs/src/MyCabs.Infrastructure/obj/Debug/net9.0/MyCabs.Infrastructure.pdb
 /Users/baoha/Desktop/Aptech/sem3/mycabs/src/MyCabs.Infrastructure/obj/Debug/net9.0/ref/MyCabs.Infrastructure.dll
+/Users/baoha/Desktop/Aptech/sem3/mycabs/src/MyCabs.Infrastructure/obj/Debug/net9.0/MyCabs.Infrastructure.sourcelink.json

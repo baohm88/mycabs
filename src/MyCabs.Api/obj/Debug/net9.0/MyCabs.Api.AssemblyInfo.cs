@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("MyCabs.Api")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+18d2e67f341da1d1c705d6ec87bdd9fdd381a784")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+a43e1e521ded3226b7c13905226f258df1d7b859")]
 [assembly: System.Reflection.AssemblyProductAttribute("MyCabs.Api")]
 [assembly: System.Reflection.AssemblyTitleAttribute("MyCabs.Api")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
