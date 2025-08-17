@@ -82,4 +82,11 @@ public class CompanyRepository : ICompanyRepository, IIndexInitializer
         var idx4 = new CreateIndexModel<Company>(Builders<Company>.IndexKeys.Ascending("services.type"));
         await _col.Indexes.CreateManyAsync(new[] { idx1, idx2, idx3, idx4 });
     }
+
+    public Task UpdateMembershipAsync(string companyId, MembershipInfo info)
+    {
+        if (!ObjectId.TryParse(companyId, out var oid)) throw new ArgumentException("Invalid companyId");
+        var update = Builders<Company>.Update.Set(x => x.Membership, info).Set(x => x.UpdatedAt, DateTime.UtcNow);
+        return _col.UpdateOneAsync(x => x.Id == oid, update);
+    }
 }

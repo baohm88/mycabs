@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using MyCabs.Api.Common;
 using MyCabs.Application.DTOs;
 using MyCabs.Application.Services;
+using MyCabs.Domain.Interfaces;
 
 namespace MyCabs.Api.Controllers;
 
@@ -12,7 +13,9 @@ namespace MyCabs.Api.Controllers;
 public class DriversController : ControllerBase
 {
     private readonly IDriverService _svc;
-    public DriversController(IDriverService svc) { _svc = svc; }
+    private readonly IDriverRepository _drivers;
+    public DriversController(IDriverService svc, IDriverRepository drivers) { _svc = svc; _drivers = drivers; }
+
 
     [HttpGet("openings")]
     public async Task<IActionResult> GetOpenings([FromQuery] CompaniesQuery q)
@@ -69,9 +72,24 @@ public class DriversController : ControllerBase
     // Stub: sẽ nối với Transactions/Wallet về sau
     [Authorize(Roles = "Driver")]
     [HttpGet("me/transactions")]
-    public IActionResult MyTransactions()
+    public async Task<IActionResult> MyTransactions([FromQuery] TransactionsQuery q, [FromServices] IFinanceService finance)
     {
-        var payload = new PagedResult<object>(Array.Empty<object>(), 1, 10, 0);
-        return Ok(ApiEnvelope.Ok(HttpContext, payload));
+        var uid = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub") ?? string.Empty;
+        var d = await _drivers.GetByUserIdAsync(uid);
+        if (d is null) return NotFound(ApiEnvelope.Fail(HttpContext, "DRIVER_NOT_FOUND", "Driver not found", 404));
+        var (items, total) = await finance.GetDriverTransactionsAsync(d.Id.ToString(), q);
+        return Ok(ApiEnvelope.Ok(HttpContext, new PagedResult<TransactionDto>(items, q.Page, q.PageSize, total)));
     }
+
+    [Authorize(Roles = "Driver")]
+    [HttpGet("me/wallet")]
+    public async Task<IActionResult> MyWallet([FromServices] IFinanceService finance)
+    {
+        var uid = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub") ?? string.Empty;
+        var d = await _drivers.GetByUserIdAsync(uid);
+        if (d is null) return NotFound(ApiEnvelope.Fail(HttpContext, "DRIVER_NOT_FOUND", "Driver not found", 404));
+        return Ok(ApiEnvelope.Ok(HttpContext, await finance.GetDriverWalletAsync(d.Id.ToString())));
+    }
+
+
 }

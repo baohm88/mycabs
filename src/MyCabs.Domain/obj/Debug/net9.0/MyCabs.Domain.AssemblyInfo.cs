@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("MyCabs.Domain")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+a43e1e521ded3226b7c13905226f258df1d7b859")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+550202f420bf39d0453f997dbeb94afcefa7b8a6")]
 [assembly: System.Reflection.AssemblyProductAttribute("MyCabs.Domain")]
 [assembly: System.Reflection.AssemblyTitleAttribute("MyCabs.Domain")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
