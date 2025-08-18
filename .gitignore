@@ -1,16 +1,5 @@
-# .NET build
 **/bin/
 **/obj/
-
-# user-specific
-*.user
-*.suo
-*.swp
-
-# OS / tools
 .DS_Store
 .vscode/
 .idea/
-
-# others
-*.sln.docstates
