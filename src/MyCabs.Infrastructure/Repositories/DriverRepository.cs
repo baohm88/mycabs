@@ -47,4 +47,27 @@ public class DriverRepository : IDriverRepository, IIndexInitializer
         var ix2 = new CreateIndexModel<Driver>(Builders<Driver>.IndexKeys.Ascending(x => x.CompanyId));
         await _col.Indexes.CreateManyAsync(new[] { ix1, ix2 });
     }
+
+    public async Task<(IEnumerable<Driver> Items, long Total)> FindAsync(int page, int pageSize, string? search, string? companyId, string? sort)
+    {
+        var f = Builders<Driver>.Filter.Empty;
+        if (!string.IsNullOrWhiteSpace(search))
+            f &= Builders<Driver>.Filter.Or(
+                Builders<Driver>.Filter.Regex(x => x.FullName, new BsonRegularExpression(search, "i")),
+                Builders<Driver>.Filter.Regex(x => x.Phone, new BsonRegularExpression(search, "i"))
+            );
+        if (!string.IsNullOrWhiteSpace(companyId) && ObjectId.TryParse(companyId, out var cid))
+            f &= Builders<Driver>.Filter.Eq(x => x.CompanyId, cid);
+
+        var q = _col.Find(f);
+        q = (sort?.ToLower()) switch
+        {
+            "name_asc" => q.SortBy(x => x.FullName),
+            "name_desc" => q.SortByDescending(x => x.FullName),
+            _ => q.SortByDescending(x => x.CreatedAt)
+        };
+        var total = await _col.CountDocumentsAsync(f);
+        var items = await q.Skip((page - 1) * pageSize).Limit(pageSize).ToListAsync();
+        return (items, total);
+    }
 }

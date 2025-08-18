@@ -79,6 +79,7 @@ builder.Services.AddScoped<IInvitationRepository, InvitationRepository>();
 builder.Services.AddScoped<ICompanyRepository, CompanyRepository>();
 builder.Services.AddScoped<IWalletRepository, WalletRepository>();
 builder.Services.AddScoped<ITransactionRepository, TransactionRepository>();
+builder.Services.AddScoped<IRatingRepository, RatingRepository>();
 
 
 builder.Services.AddScoped<DbInitializer>();
@@ -90,7 +91,6 @@ builder.Services.AddScoped<IIndexInitializer, InvitationRepository>();
 builder.Services.AddScoped<IIndexInitializer, WalletRepository>();
 builder.Services.AddScoped<IIndexInitializer, TransactionRepository>();
 builder.Services.AddScoped<IIndexInitializer, RatingRepository>();
-
 
 
 builder.Services.AddSingleton<IJwtTokenService, JwtTokenService>();
@@ -140,6 +140,7 @@ builder.Services.AddScoped<IFinanceService, FinanceService>();
 builder.Services.AddScoped<IHiringService, HiringService>();
 builder.Services.AddScoped<IRatingRepository, RatingRepository>();
 builder.Services.AddScoped<IRiderService, RiderService>();
+
 
 var app = builder.Build();
 

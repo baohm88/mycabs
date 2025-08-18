@@ -26,4 +26,9 @@ public class Driver
 
     [BsonElement("updatedAt")]
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+    [BsonElement("fullName")]
+    public string? FullName { get; set; }
+
+    [BsonElement("phone")]
+    public string? Phone { get; set; }
 }
