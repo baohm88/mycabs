@@ -6,7 +6,7 @@
 
 ## 1) Domain (Entities)
 
-``
+**Path:** `src/MyCabs.Domain/Entities/Rating.cs`
 
 ```csharp
 using MongoDB.Bson;
@@ -42,7 +42,7 @@ public class Rating
 
 ## 2) Domain (Interfaces)
 
-``
+**Path:** `src/MyCabs.Domain/Interfaces/IRatingRepository.cs`
 
 ```csharp
 using MyCabs.Domain.Entities;
@@ -64,7 +64,7 @@ public interface IRatingRepository
 
 ## 3) Infrastructure (Repositories)
 
-``
+**Path:** `src/MyCabs.Infrastructure/Repositories/RatingRepository.cs`
 
 ```csharp
 using MongoDB.Bson;
@@ -118,7 +118,7 @@ public class RatingRepository : IRatingRepository, IIndexInitializer
 
 ### 4.1 DTOs & Queries
 
-``
+**Path:** `src/MyCabs.Application/DTOs/RiderDtos.cs`
 
 ```csharp
 namespace MyCabs.Application.DTOs;
@@ -133,7 +133,7 @@ public record RatingDto(string Id, string TargetType, string TargetId, string Us
 public record RatingSummaryDto(long Count, double Average);
 ```
 
-``
+**Path:** `src/MyCabs.Application/Validation/RiderValidators.cs`
 
 ```csharp
 using FluentValidation;
@@ -188,7 +188,7 @@ public async Task<(IEnumerable<Driver> Items, long Total)> FindAsync(int page, i
 }
 ```
 
-``
+**Path:** `src/MyCabs.Application/Services/RiderService.cs`
 
 ```csharp
 using MongoDB.Bson;
@@ -251,7 +251,7 @@ public class RiderService : IRiderService
 
 ## 5) API (Controller)
 
-``
+**Path:** `src/MyCabs.Api/Controllers/RidersController.cs`
 
 ```csharp
 using System.Security.Claims;
@@ -321,6 +321,8 @@ public class RidersController : ControllerBase
 ## 6) DI (Program.cs)
 
 Thêm đăng ký cho Rider & Rating:
+
+**Path:** `src/MyCabs.Api/Program.cs`
 
 ```csharp
 using MyCabs.Domain.Interfaces;           // IRatingRepository
