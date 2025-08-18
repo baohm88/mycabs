@@ -20,4 +20,6 @@ public class Invitation
 
     [BsonElement("createdAt")]
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    [BsonElement("note")]
+    public string? Note { get; set; }
 }

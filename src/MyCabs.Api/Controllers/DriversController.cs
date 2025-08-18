@@ -91,5 +91,21 @@ public class DriversController : ControllerBase
         return Ok(ApiEnvelope.Ok(HttpContext, await finance.GetDriverWalletAsync(d.Id.ToString())));
     }
 
+    [Authorize(Roles = "Driver")]
+    [HttpGet("me/applications")]
+    public async Task<IActionResult> MyApplications([FromServices] IHiringService hiring, [FromQuery] ApplicationsQuery q)
+    {
+        var uid = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub") ?? string.Empty;
+        try { var (items, total) = await hiring.GetMyApplicationsAsync(uid, q); return Ok(ApiEnvelope.Ok(HttpContext, new PagedResult<ApplicationDto>(items, q.Page, q.PageSize, total))); }
+        catch (InvalidOperationException ex) when (ex.Message == "DRIVER_NOT_FOUND") { return NotFound(ApiEnvelope.Fail(HttpContext, "DRIVER_NOT_FOUND", "Driver not found", 404)); }
+    }
 
+    [Authorize(Roles = "Driver")]
+    [HttpGet("me/invitations")]
+    public async Task<IActionResult> MyInvitations([FromServices] IHiringService hiring, [FromQuery] InvitationsQuery q)
+    {
+        var uid = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub") ?? string.Empty;
+        try { var (items, total) = await hiring.GetMyInvitationsAsync(uid, q); return Ok(ApiEnvelope.Ok(HttpContext, new PagedResult<InvitationDto>(items, q.Page, q.PageSize, total))); }
+        catch (InvalidOperationException ex) when (ex.Message == "DRIVER_NOT_FOUND") { return NotFound(ApiEnvelope.Fail(HttpContext, "DRIVER_NOT_FOUND", "Driver not found", 404)); }
+    }
 }

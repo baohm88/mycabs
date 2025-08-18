@@ -1,0 +1,66 @@
+using MongoDB.Bson;
+using MyCabs.Application.DTOs;
+using MyCabs.Domain.Interfaces;
+
+namespace MyCabs.Application.Services;
+
+public interface IHiringService
+{
+    Task<(IEnumerable<ApplicationDto> Items, long Total)> GetCompanyApplicationsAsync(string companyId, ApplicationsQuery q);
+    Task ApproveApplicationAsync(string companyId, string appId);
+    Task RejectApplicationAsync(string companyId, string appId);
+    Task InviteDriverAsync(string companyId, InviteDriverDto dto);
+    Task<(IEnumerable<InvitationDto> Items, long Total)> GetCompanyInvitationsAsync(string companyId, InvitationsQuery q);
+
+    Task<(IEnumerable<ApplicationDto> Items, long Total)> GetMyApplicationsAsync(string userId, ApplicationsQuery q);
+    Task<(IEnumerable<InvitationDto> Items, long Total)> GetMyInvitationsAsync(string userId, InvitationsQuery q);
+}
+
+public class HiringService : IHiringService
+{
+    private readonly IApplicationRepository _apps;
+    private readonly IInvitationRepository _invites;
+    private readonly IDriverRepository _drivers;
+
+    public HiringService(IApplicationRepository apps, IInvitationRepository invites, IDriverRepository drivers)
+    { _apps = apps; _invites = invites; _drivers = drivers; }
+
+    static ApplicationDto MapApp(MyCabs.Domain.Entities.Application a)
+        => new(a.Id.ToString(), a.DriverId.ToString(), a.CompanyId.ToString(), a.Status, a.CreatedAt);
+    static InvitationDto MapInv(MyCabs.Domain.Entities.Invitation i)
+        => new(i.Id.ToString(), i.CompanyId.ToString(), i.DriverId.ToString(), i.Status, i.CreatedAt, i.Note);
+
+    public async Task<(IEnumerable<ApplicationDto> Items, long Total)> GetCompanyApplicationsAsync(string companyId, ApplicationsQuery q)
+    { var (items, total) = await _apps.FindForCompanyAsync(companyId, q.Page, q.PageSize, q.Status); return (items.Select(MapApp), total); }
+
+    public async Task ApproveApplicationAsync(string companyId, string appId)
+    {
+        var app = await _apps.GetByIdAsync(appId) ?? throw new InvalidOperationException("APPLICATION_NOT_FOUND");
+        if (app.CompanyId.ToString() != companyId) throw new InvalidOperationException("FORBIDDEN");
+        await _apps.UpdateStatusAsync(appId, "Approved");
+        await _drivers.SetCompanyAsync(app.DriverId.ToString(), companyId);
+    }
+
+    public async Task RejectApplicationAsync(string companyId, string appId)
+    {
+        var app = await _apps.GetByIdAsync(appId) ?? throw new InvalidOperationException("APPLICATION_NOT_FOUND");
+        if (app.CompanyId.ToString() != companyId) throw new InvalidOperationException("FORBIDDEN");
+        await _apps.UpdateStatusAsync(appId, "Rejected");
+    }
+
+    public async Task InviteDriverAsync(string companyId, InviteDriverDto dto)
+    {
+        // từ userId → driver profile
+        var driver = await _drivers.GetByUserIdAsync(dto.DriverUserId) ?? throw new InvalidOperationException("DRIVER_NOT_FOUND");
+        await _invites.CreateAsync(companyId, driver.Id.ToString(), dto.Note);
+    }
+
+    public async Task<(IEnumerable<InvitationDto> Items, long Total)> GetCompanyInvitationsAsync(string companyId, InvitationsQuery q)
+    { var (items, total) = await _invites.FindForCompanyAsync(companyId, q.Page, q.PageSize, q.Status); return (items.Select(MapInv), total); }
+
+    public async Task<(IEnumerable<ApplicationDto> Items, long Total)> GetMyApplicationsAsync(string userId, ApplicationsQuery q)
+    { var d = await _drivers.GetByUserIdAsync(userId) ?? throw new InvalidOperationException("DRIVER_NOT_FOUND"); var (items, total) = await _apps.FindForDriverAsync(d.Id.ToString(), q.Page, q.PageSize, q.Status); return (items.Select(MapApp), total); }
+
+    public async Task<(IEnumerable<InvitationDto> Items, long Total)> GetMyInvitationsAsync(string userId, InvitationsQuery q)
+    { var d = await _drivers.GetByUserIdAsync(userId) ?? throw new InvalidOperationException("DRIVER_NOT_FOUND"); var (items, total) = await _invites.FindForDriverAsync(d.Id.ToString(), q.Page, q.PageSize, q.Status); return (items.Select(MapInv), total); }
+}

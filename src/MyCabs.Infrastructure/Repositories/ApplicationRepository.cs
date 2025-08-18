@@ -43,4 +43,37 @@ public class ApplicationRepository : IApplicationRepository, IIndexInitializer
         var ix3 = new CreateIndexModel<Application>(Builders<Application>.IndexKeys.Ascending(x => x.Status));
         await _col.Indexes.CreateManyAsync(new[] { ix1, ix2, ix3 });
     }
+
+    public async Task<Application?> GetByIdAsync(string appId)
+    {
+        if (!ObjectId.TryParse(appId, out var id)) return null;
+        return await _col.Find(x => x.Id == id).FirstOrDefaultAsync();
+    }
+
+    public Task UpdateStatusAsync(string appId, string status)
+    {
+        if (!ObjectId.TryParse(appId, out var id)) throw new ArgumentException("Invalid appId");
+        var update = Builders<Application>.Update.Set(x => x.Status, status);
+        return _col.UpdateOneAsync(x => x.Id == id, update);
+    }
+
+    public async Task<(IEnumerable<Application> Items, long Total)> FindForCompanyAsync(string companyId, int page, int pageSize, string? status)
+    {
+        if (!ObjectId.TryParse(companyId, out var cid)) return (Enumerable.Empty<Application>(), 0);
+        var f = Builders<Application>.Filter.Eq(x => x.CompanyId, cid);
+        if (!string.IsNullOrWhiteSpace(status)) f &= Builders<Application>.Filter.Eq(x => x.Status, status);
+        var total = await _col.CountDocumentsAsync(f);
+        var items = await _col.Find(f).SortByDescending(x => x.CreatedAt).Skip((page - 1) * pageSize).Limit(pageSize).ToListAsync();
+        return (items, total);
+    }
+
+    public async Task<(IEnumerable<Application> Items, long Total)> FindForDriverAsync(string driverId, int page, int pageSize, string? status)
+    {
+        if (!ObjectId.TryParse(driverId, out var did)) return (Enumerable.Empty<Application>(), 0);
+        var f = Builders<Application>.Filter.Eq(x => x.DriverId, did);
+        if (!string.IsNullOrWhiteSpace(status)) f &= Builders<Application>.Filter.Eq(x => x.Status, status);
+        var total = await _col.CountDocumentsAsync(f);
+        var items = await _col.Find(f).SortByDescending(x => x.CreatedAt).Skip((page - 1) * pageSize).Limit(pageSize).ToListAsync();
+        return (items, total);
+    }
 }
