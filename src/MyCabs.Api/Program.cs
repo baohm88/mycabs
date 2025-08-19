@@ -17,6 +17,9 @@ using MyCabs.Api.Middleware;
 using MyCabs.Api.Common;
 using Microsoft.AspNetCore.Mvc;
 using MyCabs.Api.Jwt;
+using MyCabs.Api.Hubs;
+using MyCabs.Api.Realtime;
+
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -60,14 +63,18 @@ builder.Services.AddSwaggerGen(c =>
 });
 
 // CORS for frontend
-builder.Services.AddCors(o => o.AddPolicy("ui", p => p
+builder.Services.AddCors(o => o.AddPolicy("ViteDev", p => p
     .WithOrigins("http://localhost:3000")
     .AllowAnyHeader()
     .AllowAnyMethod()
+    .AllowCredentials()
 ));
 
 // Options
 builder.Services.Configure<MongoSettings>(builder.Configuration.GetSection("Mongo"));
+
+// 2) SignalR
+builder.Services.AddSignalR();
 
 // Mongo + repos
 builder.Services.AddSingleton<IMongoContext, MongoContext>();
@@ -80,8 +87,12 @@ builder.Services.AddScoped<ICompanyRepository, CompanyRepository>();
 builder.Services.AddScoped<IWalletRepository, WalletRepository>();
 builder.Services.AddScoped<ITransactionRepository, TransactionRepository>();
 builder.Services.AddScoped<IRatingRepository, RatingRepository>();
+builder.Services.AddScoped<INotificationRepository, NotificationRepository>();
+builder.Services.AddScoped<INotificationService, NotificationService>();
+builder.Services.AddSingleton<IRealtimeNotifier, SignalRNotifier>();
 
 
+// Indexes
 builder.Services.AddScoped<DbInitializer>();
 builder.Services.AddScoped<IIndexInitializer, UserRepository>();
 builder.Services.AddScoped<IIndexInitializer, CompanyRepository>();
@@ -91,6 +102,8 @@ builder.Services.AddScoped<IIndexInitializer, InvitationRepository>();
 builder.Services.AddScoped<IIndexInitializer, WalletRepository>();
 builder.Services.AddScoped<IIndexInitializer, TransactionRepository>();
 builder.Services.AddScoped<IIndexInitializer, RatingRepository>();
+builder.Services.AddScoped<IIndexInitializer, NotificationRepository>();
+
 
 
 builder.Services.AddSingleton<IJwtTokenService, JwtTokenService>();
@@ -126,6 +139,14 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 ctx.Response.ContentType = "application/json";
                 var body = ApiEnvelope.Fail(ctx.HttpContext, "FORBIDDEN", "You do not have permission to access this resource", 403);
                 return ctx.Response.WriteAsJsonAsync(body);
+            },
+            OnMessageReceived = ctx =>
+            {
+                var accessToken = ctx.Request.Query["access_token"].ToString();
+                var path = ctx.HttpContext.Request.Path;
+                if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs/notifications"))
+                    ctx.Token = accessToken;
+                return Task.CompletedTask;
             }
         };
     });
@@ -158,10 +179,11 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseMiddleware<ExceptionHandlingMiddleware>();
-app.UseCors("ui");
+app.UseCors("ViteDev");
 app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
+app.MapHub<NotificationsHub>("/hubs/notifications");
 app.MapControllers();
 
 await app.RunAsync();
