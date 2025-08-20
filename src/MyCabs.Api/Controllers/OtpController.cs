@@ -26,6 +26,7 @@ public class OtpController : ControllerBase
         catch (InvalidOperationException ex) when (ex.Message == "EMAIL_NOT_FOUND")
         {
             // tránh lộ email tồn tại: vẫn trả OK
+            Console.WriteLine($"[OTP] EMAIL_NOT_FOUND for {dto.Email}");
             return Ok(ApiEnvelope.Ok(HttpContext, new { message = "OTP sent" }));
         }
     }
