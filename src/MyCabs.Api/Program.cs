@@ -19,9 +19,17 @@ using Microsoft.AspNetCore.Mvc;
 using MyCabs.Api.Jwt;
 using MyCabs.Api.Hubs;
 using MyCabs.Api.Realtime;
+using MyCabs.Api.Email;
 
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Email sender: chọn DevConsole cho môi trường dev
+var emailProvider = builder.Configuration["Email:Provider"] ?? "DevConsole";
+if (emailProvider == "Smtp")
+    builder.Services.AddSingleton<IEmailSender, SmtpEmailSender>();
+else
+    builder.Services.AddSingleton<IEmailSender, DevConsoleEmailSender>();
 
 // Controllers + FluentValidation
 builder.Services.AddControllers();
@@ -90,6 +98,9 @@ builder.Services.AddScoped<IRatingRepository, RatingRepository>();
 builder.Services.AddScoped<INotificationRepository, NotificationRepository>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddSingleton<IRealtimeNotifier, SignalRNotifier>();
+builder.Services.AddScoped<IEmailOtpRepository, EmailOtpRepository>();
+builder.Services.AddScoped<IEmailOtpService, EmailOtpService>();
+
 
 
 // Indexes
@@ -103,7 +114,7 @@ builder.Services.AddScoped<IIndexInitializer, WalletRepository>();
 builder.Services.AddScoped<IIndexInitializer, TransactionRepository>();
 builder.Services.AddScoped<IIndexInitializer, RatingRepository>();
 builder.Services.AddScoped<IIndexInitializer, NotificationRepository>();
-
+builder.Services.AddScoped<IIndexInitializer, EmailOtpRepository>();
 
 
 builder.Services.AddSingleton<IJwtTokenService, JwtTokenService>();

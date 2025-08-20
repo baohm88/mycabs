@@ -2,6 +2,7 @@ using BCrypt.Net;
 using MyCabs.Application.DTOs;
 using MyCabs.Domain.Entities;
 using MyCabs.Domain.Interfaces;
+using MongoDB.Bson;
 
 namespace MyCabs.Application.Services;
 
@@ -19,14 +20,24 @@ public class AuthService : IAuthService
 
     public async Task<(bool ok, string? error, string? token)> RegisterAsync(RegisterDto dto)
     {
-        var exists = await _users.FindByEmailAsync(dto.Email.Trim().ToLower());
-        if (exists != null) return (false, "Email already exists", null);
+        // 1) chuẩn hoá email nhập vào
+        var emailLower = dto.Email.Trim().ToLowerInvariant();
+
+        // 2) kiểm tra tồn tại theo EmailLower
+        var existed = await _users.GetByEmailAsync(emailLower);
+        if (existed != null) return (false, "Email already exists", null);
         var user = new User
         {
-            Email = dto.Email.Trim().ToLower(),
-            PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password),
-            FullName = dto.FullName,
+            Id = ObjectId.GenerateNewId(),
+            Email = dto.Email.Trim(),
+            EmailLower = emailLower,
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password, 11),
+            FullName = dto.FullName?.Trim() ?? "",
             Role = dto.Role,
+            EmailVerified = false,
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
         };
         await _users.CreateAsync(user);
         var token = _jwt.Generate(user);
@@ -35,7 +46,8 @@ public class AuthService : IAuthService
 
     public async Task<(bool ok, string? error, string? token)> LoginAsync(LoginDto dto)
     {
-        var user = await _users.FindByEmailAsync(dto.Email.Trim().ToLower());
+        var emailLower = dto.Email.Trim().ToLowerInvariant();
+        var user = await _users.GetByEmailAsync(emailLower);
         if (user == null || !BCrypt.Net.BCrypt.Verify(dto.Password, user.PasswordHash))
             return (false, "Invalid credentials", null);
         if (!user.IsActive) return (false, "Account deactivated", null);
