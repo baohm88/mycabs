@@ -20,6 +20,7 @@ using MyCabs.Api.Jwt;
 using MyCabs.Api.Hubs;
 using MyCabs.Api.Realtime;
 using MyCabs.Api.Email;
+using MyCabs.Application.Realtime;
 
 
 var builder = WebApplication.CreateBuilder(args);
@@ -97,7 +98,7 @@ builder.Services.AddScoped<ITransactionRepository, TransactionRepository>();
 builder.Services.AddScoped<IRatingRepository, RatingRepository>();
 builder.Services.AddScoped<INotificationRepository, NotificationRepository>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
-builder.Services.AddSingleton<IRealtimeNotifier, SignalRNotifier>();
+builder.Services.AddScoped<IRealtimeNotifier, SignalRNotifier>();
 builder.Services.AddScoped<IEmailOtpRepository, EmailOtpRepository>();
 builder.Services.AddScoped<IEmailOtpService, EmailOtpService>();
 

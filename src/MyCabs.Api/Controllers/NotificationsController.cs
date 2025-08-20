@@ -1,8 +1,8 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using MyCabs.Application.DTOs;
 using MyCabs.Application.Services;
+using MyCabs.Domain.Interfaces;
 using MyCabs.Api.Common;
 
 namespace MyCabs.Api.Controllers;
@@ -13,39 +13,63 @@ namespace MyCabs.Api.Controllers;
 public class NotificationsController : ControllerBase
 {
     private readonly INotificationService _svc;
-    public NotificationsController(INotificationService svc) { _svc = svc; }
+    private readonly INotificationRepository _repo;
+    public NotificationsController(INotificationService svc, INotificationRepository repo)
+    { _svc = svc; _repo = repo; }
 
+    private string CurrentUserId() =>
+        User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub") ?? string.Empty;
+
+    // ✅ Chỉ còn 1 action cho GET /api/Notifications
     [HttpGet]
-    public async Task<IActionResult> Get([FromQuery] NotificationsQuery q)
+    public async Task<IActionResult> List([FromQuery] int page = 1, [FromQuery] int pageSize = 20, [FromQuery] bool? unreadOnly = null)
     {
-        var uid = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub") ?? string.Empty;
-        var (items, total) = await _svc.GetAsync(uid, q);
-        return Ok(ApiEnvelope.Ok(HttpContext, new PagedResult<NotificationDto>(items, q.Page, q.PageSize, total)));
+        var uid = CurrentUserId();
+        var (items, total) = await _repo.FindAsync(uid, page, pageSize, unreadOnly);
+        return Ok(ApiEnvelope.Ok(HttpContext, new PagedResult<object>(items, page, pageSize, total)));
     }
 
-    [HttpPost("mark-read")] // body: { notificationId: "..." }
-    public async Task<IActionResult> MarkRead([FromBody] Dictionary<string, string> body)
+    [HttpGet("unread-count")]
+    public async Task<IActionResult> UnreadCount()
     {
-        var uid = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub") ?? string.Empty;
-        if (!body.TryGetValue("notificationId", out var nid)) return BadRequest(ApiEnvelope.Fail(HttpContext, "VALIDATION_ERROR", "notificationId is required", 400));
-        var ok = await _svc.MarkReadAsync(uid, nid);
-        return Ok(ApiEnvelope.Ok(HttpContext, new { updated = ok }));
+        var uid = CurrentUserId();
+        var n = await _svc.GetUnreadCountAsync(uid);
+        return Ok(ApiEnvelope.Ok(HttpContext, new { count = n }));
+    }
+
+    [HttpPost("mark-read/{id}")]
+    public async Task<IActionResult> MarkRead([FromRoute] string id)
+    {
+        var uid = CurrentUserId();
+        var ok = await _svc.MarkReadAsync(uid, id);
+        if (!ok) return NotFound(ApiEnvelope.Fail(HttpContext, "NOT_FOUND", "Notification not found or already read", 404));
+        return Ok(ApiEnvelope.Ok(HttpContext, new { marked = true }));
+    }
+
+    public record MarkBulkReq(string[] Ids);
+
+    [HttpPost("mark-read-bulk")]
+    public async Task<IActionResult> MarkReadBulk([FromBody] MarkBulkReq req)
+    {
+        var uid = CurrentUserId();
+        var n = await _svc.MarkReadBulkAsync(uid, req.Ids ?? Array.Empty<string>());
+        return Ok(ApiEnvelope.Ok(HttpContext, new { marked = n }));
     }
 
     [HttpPost("mark-all-read")]
     public async Task<IActionResult> MarkAllRead()
     {
-        var uid = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub") ?? string.Empty;
-        var cnt = await _svc.MarkAllReadAsync(uid);
-        return Ok(ApiEnvelope.Ok(HttpContext, new { updated = cnt }));
+        var uid = CurrentUserId();
+        var n = await _svc.MarkAllReadAsync(uid);
+        return Ok(ApiEnvelope.Ok(HttpContext, new { marked = n }));
     }
 
-    // Dev helper: tự tạo 1 notification cho user hiện tại
-    [HttpPost("test")] // body: CreateNotificationDto
-    public async Task<IActionResult> Test([FromBody] CreateNotificationDto dto)
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> Delete([FromRoute] string id)
     {
-        var uid = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub") ?? string.Empty;
-        await _svc.PublishAsync(uid, dto);
-        return Ok(ApiEnvelope.Ok(HttpContext, new { message = "pushed" }));
+        var uid = CurrentUserId();
+        var ok = await _svc.DeleteAsync(uid, id);
+        if (!ok) return NotFound(ApiEnvelope.Fail(HttpContext, "NOT_FOUND", "Notification not found", 404));
+        return Ok(ApiEnvelope.Ok(HttpContext, new { deleted = true }));
     }
 }

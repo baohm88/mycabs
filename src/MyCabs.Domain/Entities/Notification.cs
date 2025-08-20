@@ -12,7 +12,15 @@ public class Notification
     [BsonElement("title")] public string? Title { get; set; }
     [BsonElement("message")] public string Message { get; set; } = string.Empty;
     [BsonElement("data")] public BsonDocument? Data { get; set; }
-    [BsonElement("isRead")] public bool IsRead { get; set; } = false;
+    // [BsonElement("isRead")] public bool IsRead { get; set; } = false;
     [BsonElement("createdAt")] public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     [BsonElement("readAt")] public DateTime? ReadAt { get; set; }
+    // Thêm (nếu chưa có)
+
+    [BsonElement("deletedAt")] public DateTime? DeletedAt { get; set; }
+    [BsonElement("updatedAt")] public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+
+
+    // Helper (không cần BsonElement)
+    [BsonIgnore] public bool IsRead => ReadAt != null;
 }
