@@ -2,6 +2,8 @@ using MongoDB.Bson;
 using MyCabs.Application.DTOs;
 using MyCabs.Domain.Entities;
 using MyCabs.Domain.Interfaces;
+using Microsoft.Extensions.Configuration;
+using MyCabs.Domain.Constants;
 
 namespace MyCabs.Application.Services;
 
@@ -22,24 +24,47 @@ public class FinanceService : IFinanceService
     private readonly ITransactionRepository _txs;
     private readonly IDriverRepository _drivers;
     private readonly ICompanyRepository _companies;
+    private readonly IConfiguration _cfg;
+    private readonly INotificationService _notif;
 
-    public FinanceService(IWalletRepository wallets, ITransactionRepository txs, IDriverRepository drivers, ICompanyRepository companies)
-    { _wallets = wallets; _txs = txs; _drivers = drivers; _companies = companies; }
+    private const decimal DEFAULT_THRESHOLD = 200_000M;
+
+    public FinanceService(
+        IWalletRepository wallets,
+        ITransactionRepository txs,
+        IDriverRepository drivers,
+        ICompanyRepository companies,
+        IConfiguration cfg,
+        INotificationService notif)
+    {
+        _wallets = wallets; _txs = txs; _drivers = drivers; _companies = companies; _cfg = cfg; _notif = notif;
+    }
 
     static WalletDto Map(Wallet w) => new(w.Id.ToString(), w.OwnerType, w.OwnerId.ToString(), w.Balance, w.LowBalanceThreshold);
+
     static TransactionDto Map(Transaction t) => new(
         t.Id.ToString(), t.Type, t.Status, t.Amount,
         t.FromWalletId?.ToString(), t.ToWalletId?.ToString(), t.CompanyId?.ToString(), t.DriverId?.ToString(),
         t.Note, t.CreatedAt
     );
 
-    public async Task<WalletDto> GetCompanyWalletAsync(string companyId) => Map(await _wallets.GetOrCreateAsync("Company", companyId));
-    public async Task<(IEnumerable<TransactionDto> Items, long Total)> GetCompanyTransactionsAsync(string companyId, TransactionsQuery q)
-    { var (items, total) = await _txs.FindForCompanyAsync(companyId, q.Page, q.PageSize, q.Type, q.Status); return (items.Select(Map), total); }
+    public async Task<WalletDto> GetCompanyWalletAsync(string companyId)
+        => Map(await _wallets.GetOrCreateAsync("Company", companyId));
 
-    public async Task<WalletDto> GetDriverWalletAsync(string driverId) => Map(await _wallets.GetOrCreateAsync("Driver", driverId));
+    public async Task<(IEnumerable<TransactionDto> Items, long Total)> GetCompanyTransactionsAsync(string companyId, TransactionsQuery q)
+    {
+        var (items, total) = await _txs.FindForCompanyAsync(companyId, q.Page, q.PageSize, q.Type, q.Status);
+        return (items.Select(Map), total);
+    }
+
+    public async Task<WalletDto> GetDriverWalletAsync(string driverId)
+        => Map(await _wallets.GetOrCreateAsync("Driver", driverId));
+
     public async Task<(IEnumerable<TransactionDto> Items, long Total)> GetDriverTransactionsAsync(string driverId, TransactionsQuery q)
-    { var (items, total) = await _txs.FindForDriverAsync(driverId, q.Page, q.PageSize, q.Type, q.Status); return (items.Select(Map), total); }
+    {
+        var (items, total) = await _txs.FindForDriverAsync(driverId, q.Page, q.PageSize, q.Type, q.Status);
+        return (items.Select(Map), total);
+    }
 
     public async Task<bool> TopUpCompanyAsync(string companyId, TopUpDto dto)
     {
@@ -66,7 +91,9 @@ public class FinanceService : IFinanceService
         var compW = await _wallets.GetOrCreateAsync("Company", companyId);
         var driver = await _drivers.GetByUserIdAsync(dto.DriverId) ?? throw new InvalidOperationException("DRIVER_NOT_FOUND");
         var drvW = await _wallets.GetOrCreateAsync("Driver", driver.Id.ToString());
+
         var debited = await _wallets.TryDebitAsync(compW.Id.ToString(), dto.Amount);
+
         var tx = new Transaction
         {
             Id = ObjectId.GenerateNewId(),
@@ -80,9 +107,22 @@ public class FinanceService : IFinanceService
             Note = dto.Note,
             CreatedAt = DateTime.UtcNow
         };
-        if (!debited) { await _txs.CreateAsync(tx); return (false, "INSUFFICIENT_FUNDS"); }
+
+        if (!debited)
+        {
+            await _txs.CreateAsync(tx);
+            return (false, "INSUFFICIENT_FUNDS");
+        }
+
         await _wallets.CreditAsync(drvW.Id.ToString(), dto.Amount);
         await _txs.CreateAsync(tx);
+
+        // Re-load wallet và notify nếu thấp
+        var company = await _companies.GetByIdAsync(companyId);
+        var freshWallet = await _wallets.GetOrCreateAsync("Company", companyId);
+        if (company != null)
+            await MaybeNotifyLowBalanceAsync(company.OwnerUserId.ToString(), freshWallet);
+
         return (true, null);
     }
 
@@ -90,6 +130,7 @@ public class FinanceService : IFinanceService
     {
         var compW = await _wallets.GetOrCreateAsync("Company", companyId);
         var debited = dto.Amount <= 0 ? true : await _wallets.TryDebitAsync(compW.Id.ToString(), dto.Amount);
+
         await _txs.CreateAsync(new Transaction
         {
             Id = ObjectId.GenerateNewId(),
@@ -103,9 +144,42 @@ public class FinanceService : IFinanceService
             Note = dto.Note ?? $"Plan={dto.Plan}; Cycle={dto.BillingCycle}",
             CreatedAt = DateTime.UtcNow
         });
+
         if (!debited) return (false, "INSUFFICIENT_FUNDS");
+
         var expires = DateTime.UtcNow.AddMonths(dto.BillingCycle == "quarterly" ? 3 : 1);
-        await _companies.UpdateMembershipAsync(companyId, new MembershipInfo { Plan = dto.Plan, BillingCycle = dto.BillingCycle, ExpiresAt = expires });
+        await _companies.UpdateMembershipAsync(companyId, new MembershipInfo
+        {
+            Plan = dto.Plan,
+            BillingCycle = dto.BillingCycle,
+            ExpiresAt = expires
+        });
+
+        var company = await _companies.GetByIdAsync(companyId);
+        var freshWallet = await _wallets.GetOrCreateAsync("Company", companyId);
+        if (company != null)
+            await MaybeNotifyLowBalanceAsync(company.OwnerUserId.ToString(), freshWallet);
+
         return (true, null);
+    }
+
+    private async Task MaybeNotifyLowBalanceAsync(string ownerUserId, Wallet w)
+    {
+        var threshold = _cfg.GetValue<decimal?>("Finance:LowBalanceThreshold") ?? DEFAULT_THRESHOLD;
+        if (w.Balance < threshold)
+        {
+            await _notif.PublishAsync(ownerUserId, new CreateNotificationDto(
+    NotificationKinds.WalletLowBalance,
+    "Số dư ví thấp",
+    $"Số dư còn {w.Balance:N0} < ngưỡng {threshold:N0}",
+    new Dictionary<string, object> // <— đổi object?>
+    {
+        ["walletId"] = w.Id.ToString(),
+        ["balance"] = w.Balance,
+        ["threshold"] = threshold
+    }
+));
+
+        }
     }
 }

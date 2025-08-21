@@ -55,17 +55,41 @@ public class NotificationService : INotificationService
         return ok;
     }
 
+    // public async Task PublishAsync(string userId, CreateNotificationDto dto)
+    // {
+    //     if (!ObjectId.TryParse(userId, out var uid)) throw new ArgumentException("Invalid userId");
+    //     var n = new Notification
+    //     {
+    //         Id = ObjectId.GenerateNewId(),
+    //         UserId = uid,
+    //         Type = dto.Type,
+    //         Title = dto.Title,
+    //         Message = dto.Message,
+    //         Data = dto.Data != null ? BsonDocument.Parse(JsonSerializer.Serialize(dto.Data)) : null,
+    //         CreatedAt = DateTime.UtcNow
+    //     };
+    //     await _repo.CreateAsync(n);
+
+    //     var payload = new NotificationDto(
+    //         n.Id.ToString(), n.Type, n.Title, n.Message, n.IsRead, n.CreatedAt, n.ReadAt, dto.Data
+    //     );
+
+    //     await _rt.NotifyUserAsync(userId, "notification", payload);
+    // }
+
     public async Task PublishAsync(string userId, CreateNotificationDto dto)
     {
-        if (!ObjectId.TryParse(userId, out var uid)) throw new ArgumentException("Invalid userId");
+        if (!MongoDB.Bson.ObjectId.TryParse(userId, out var uid)) throw new ArgumentException("Invalid userId");
         var n = new Notification
         {
-            Id = ObjectId.GenerateNewId(),
+            Id = MongoDB.Bson.ObjectId.GenerateNewId(),
             UserId = uid,
             Type = dto.Type,
             Title = dto.Title,
             Message = dto.Message,
-            Data = dto.Data != null ? BsonDocument.Parse(JsonSerializer.Serialize(dto.Data)) : null,
+            Data = dto.Data != null
+                ? MongoDB.Bson.BsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(dto.Data))
+                : null,
             CreatedAt = DateTime.UtcNow
         };
         await _repo.CreateAsync(n);
@@ -73,7 +97,6 @@ public class NotificationService : INotificationService
         var payload = new NotificationDto(
             n.Id.ToString(), n.Type, n.Title, n.Message, n.IsRead, n.CreatedAt, n.ReadAt, dto.Data
         );
-
         await _rt.NotifyUserAsync(userId, "notification", payload);
     }
 
