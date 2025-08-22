@@ -44,10 +44,11 @@ public class ChatRepository : IChatRepository, IIndexInitializer
         return t;
     }
 
-    public Task<ChatThread?> GetThreadByIdAsync(string threadId)
+    public async Task<ChatThread?> GetThreadByIdAsync(string threadId)
     {
-        if (!ObjectId.TryParse(threadId, out var oid)) return Task.FromResult<ChatThread?>(null);
-        return _threads.Find(x => x.Id == oid).FirstOrDefaultAsync();
+        if (!ObjectId.TryParse(threadId, out var oid)) return null;
+        var doc = await _threads.Find(x => x.Id == oid).FirstOrDefaultAsync();
+        return (ChatThread?)doc; // cast về nullable để hết warning
     }
 
     public async Task<(IEnumerable<ChatThread> Items, long Total)> ListThreadsForUserAsync(string userId, int page, int pageSize)

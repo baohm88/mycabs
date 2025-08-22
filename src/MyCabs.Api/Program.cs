@@ -21,7 +21,7 @@ using MyCabs.Api.Hubs;
 using MyCabs.Api.Realtime;
 using MyCabs.Api.Email;
 using MyCabs.Application.Realtime;
-
+using MyCabs.Application.Interfaces;
 
 
 var builder = WebApplication.CreateBuilder(args);
@@ -104,6 +104,8 @@ builder.Services.AddScoped<IEmailOtpRepository, EmailOtpRepository>();
 builder.Services.AddScoped<IEmailOtpService, EmailOtpService>();
 builder.Services.AddScoped<IChatRepository, ChatRepository>();
 builder.Services.AddScoped<IChatService, ChatService>();
+builder.Services.AddScoped<IAdminReportRepository, AdminReportRepository>();
+
 
 
 
@@ -177,6 +179,7 @@ builder.Services.AddScoped<IFinanceService, FinanceService>();
 builder.Services.AddScoped<IHiringService, HiringService>();
 builder.Services.AddScoped<IRatingRepository, RatingRepository>();
 builder.Services.AddScoped<IRiderService, RiderService>();
+builder.Services.AddScoped<IAdminReportService, AdminReportService>();
 
 
 var app = builder.Build();
