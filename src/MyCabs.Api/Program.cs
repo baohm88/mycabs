@@ -22,6 +22,7 @@ using MyCabs.Api.Realtime;
 using MyCabs.Api.Email;
 using MyCabs.Application.Realtime;
 using MyCabs.Application.Interfaces;
+using System.Security.Claims;
 
 
 var builder = WebApplication.CreateBuilder(args);
@@ -123,9 +124,6 @@ builder.Services.AddScoped<IIndexInitializer, NotificationRepository>();
 builder.Services.AddScoped<IIndexInitializer, EmailOtpRepository>();
 builder.Services.AddScoped<IChatPusher, ChatPusher>();
 
-
-builder.Services.AddSingleton<IJwtTokenService, JwtTokenService>();
-
 // JWT
 var key = Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]!);
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -138,7 +136,9 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateIssuerSigningKey = true,
             ValidIssuer = builder.Configuration["Jwt:Issuer"],
             ValidAudience = builder.Configuration["Jwt:Audience"],
-            IssuerSigningKey = new SymmetricSecurityKey(key)
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]!)),
+            RoleClaimType = ClaimTypes.Role // NEW: để [Authorize(Roles="Admin")] hoạt động khi token dùng claim role chuẩn
+            // Nếu token của bạn dùng key "role" thuần: thay bằng RoleClaimType = "role"
         };
 
         o.Events = new JwtBearerEvents
@@ -162,8 +162,11 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             {
                 var accessToken = ctx.Request.Query["access_token"].ToString();
                 var path = ctx.HttpContext.Request.Path;
-                if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs/notifications"))
+                if (!string.IsNullOrEmpty(accessToken) &&
+                    (path.StartsWithSegments("/hubs/notifications") || path.StartsWithSegments("/hubs/admin")))
+                {
                     ctx.Token = accessToken;
+                }
                 return Task.CompletedTask;
             }
         };
@@ -171,7 +174,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 builder.Services.AddAuthorization();
 
 // Services
-builder.Services.AddSingleton<IJwtTokenService, JwtTokenService>();
+builder.Services.AddSingleton<MyCabs.Application.IJwtTokenService, MyCabs.Api.Jwt.JwtTokenService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<ICompanyService, CompanyService>();
 builder.Services.AddScoped<IDriverService, DriverService>();
@@ -180,6 +183,7 @@ builder.Services.AddScoped<IHiringService, HiringService>();
 builder.Services.AddScoped<IRatingRepository, RatingRepository>();
 builder.Services.AddScoped<IRiderService, RiderService>();
 builder.Services.AddScoped<IAdminReportService, AdminReportService>();
+builder.Services.AddSingleton<IAdminRealtime, AdminHubNotifier>();
 
 
 var app = builder.Build();
@@ -203,6 +207,7 @@ app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapHub<NotificationsHub>("/hubs/notifications");
+app.MapHub<AdminHub>("/hubs/admin");
 app.MapControllers();
 
 await app.RunAsync();

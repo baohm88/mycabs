@@ -8,7 +8,7 @@ namespace MyCabs.Api.Controllers;
 
 [ApiController]
 [Route("api/admin/reports")]
-[Authorize] // TODO: thêm policy/role Admin
+[Authorize(Roles = "Admin")] // Restrict to Admin role
 public class AdminReportsController : ControllerBase
 {
     private readonly IAdminReportService _svc;

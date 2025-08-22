@@ -4,6 +4,7 @@ using MyCabs.Domain.Entities;
 using MyCabs.Domain.Interfaces;
 using Microsoft.Extensions.Configuration;
 using MyCabs.Domain.Constants;
+using MyCabs.Application.Realtime;
 
 namespace MyCabs.Application.Services;
 
@@ -26,6 +27,7 @@ public class FinanceService : IFinanceService
     private readonly ICompanyRepository _companies;
     private readonly IConfiguration _cfg;
     private readonly INotificationService _notif;
+    private readonly IAdminRealtime _adminRt;
 
     private const decimal DEFAULT_THRESHOLD = 200_000M;
 
@@ -35,9 +37,10 @@ public class FinanceService : IFinanceService
         IDriverRepository drivers,
         ICompanyRepository companies,
         IConfiguration cfg,
-        INotificationService notif)
+        INotificationService notif,
+        IAdminRealtime adminRt)
     {
-        _wallets = wallets; _txs = txs; _drivers = drivers; _companies = companies; _cfg = cfg; _notif = notif;
+        _wallets = wallets; _txs = txs; _drivers = drivers; _companies = companies; _cfg = cfg; _notif = notif; _adminRt = adminRt;
     }
 
     static WalletDto Map(Wallet w) => new(w.Id.ToString(), w.OwnerType, w.OwnerId.ToString(), w.Balance, w.LowBalanceThreshold);
@@ -70,7 +73,7 @@ public class FinanceService : IFinanceService
     {
         var w = await _wallets.GetOrCreateAsync("Company", companyId);
         await _wallets.CreditAsync(w.Id.ToString(), dto.Amount);
-        await _txs.CreateAsync(new Transaction
+        var tx = new Transaction
         {
             Id = ObjectId.GenerateNewId(),
             Type = "Topup",
@@ -82,7 +85,9 @@ public class FinanceService : IFinanceService
             DriverId = null,
             Note = dto.Note,
             CreatedAt = DateTime.UtcNow
-        });
+        };
+        await _txs.CreateAsync(tx);
+        await _adminRt.TxCreatedAsync(Map(tx));           // <— push realtime
         return true;
     }
 
@@ -91,9 +96,7 @@ public class FinanceService : IFinanceService
         var compW = await _wallets.GetOrCreateAsync("Company", companyId);
         var driver = await _drivers.GetByUserIdAsync(dto.DriverId) ?? throw new InvalidOperationException("DRIVER_NOT_FOUND");
         var drvW = await _wallets.GetOrCreateAsync("Driver", driver.Id.ToString());
-
         var debited = await _wallets.TryDebitAsync(compW.Id.ToString(), dto.Amount);
-
         var tx = new Transaction
         {
             Id = ObjectId.GenerateNewId(),
@@ -107,22 +110,15 @@ public class FinanceService : IFinanceService
             Note = dto.Note,
             CreatedAt = DateTime.UtcNow
         };
-
-        if (!debited)
-        {
-            await _txs.CreateAsync(tx);
-            return (false, "INSUFFICIENT_FUNDS");
-        }
+        await _txs.CreateAsync(tx);
+        await _adminRt.TxCreatedAsync(Map(tx));           // <— push realtime
+        if (!debited) return (false, "INSUFFICIENT_FUNDS");
 
         await _wallets.CreditAsync(drvW.Id.ToString(), dto.Amount);
-        await _txs.CreateAsync(tx);
-
-        // Re-load wallet và notify nếu thấp
         var company = await _companies.GetByIdAsync(companyId);
         var freshWallet = await _wallets.GetOrCreateAsync("Company", companyId);
         if (company != null)
             await MaybeNotifyLowBalanceAsync(company.OwnerUserId.ToString(), freshWallet);
-
         return (true, null);
     }
 
@@ -130,8 +126,7 @@ public class FinanceService : IFinanceService
     {
         var compW = await _wallets.GetOrCreateAsync("Company", companyId);
         var debited = dto.Amount <= 0 ? true : await _wallets.TryDebitAsync(compW.Id.ToString(), dto.Amount);
-
-        await _txs.CreateAsync(new Transaction
+        var tx = new Transaction
         {
             Id = ObjectId.GenerateNewId(),
             Type = "Membership",
@@ -143,8 +138,9 @@ public class FinanceService : IFinanceService
             DriverId = null,
             Note = dto.Note ?? $"Plan={dto.Plan}; Cycle={dto.BillingCycle}",
             CreatedAt = DateTime.UtcNow
-        });
-
+        };
+        await _txs.CreateAsync(tx);
+        await _adminRt.TxCreatedAsync(Map(tx));           // <— push realtime
         if (!debited) return (false, "INSUFFICIENT_FUNDS");
 
         var expires = DateTime.UtcNow.AddMonths(dto.BillingCycle == "quarterly" ? 3 : 1);
@@ -159,7 +155,6 @@ public class FinanceService : IFinanceService
         var freshWallet = await _wallets.GetOrCreateAsync("Company", companyId);
         if (company != null)
             await MaybeNotifyLowBalanceAsync(company.OwnerUserId.ToString(), freshWallet);
-
         return (true, null);
     }
 
