@@ -23,6 +23,7 @@ using MyCabs.Api.Email;
 using MyCabs.Application.Realtime;
 
 
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Email sender: chọn DevConsole cho môi trường dev
@@ -101,6 +102,8 @@ builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IRealtimeNotifier, SignalRNotifier>();
 builder.Services.AddScoped<IEmailOtpRepository, EmailOtpRepository>();
 builder.Services.AddScoped<IEmailOtpService, EmailOtpService>();
+builder.Services.AddScoped<IChatRepository, ChatRepository>();
+builder.Services.AddScoped<IChatService, ChatService>();
 
 
 
@@ -116,6 +119,7 @@ builder.Services.AddScoped<IIndexInitializer, TransactionRepository>();
 builder.Services.AddScoped<IIndexInitializer, RatingRepository>();
 builder.Services.AddScoped<IIndexInitializer, NotificationRepository>();
 builder.Services.AddScoped<IIndexInitializer, EmailOtpRepository>();
+builder.Services.AddScoped<IChatPusher, ChatPusher>();
 
 
 builder.Services.AddSingleton<IJwtTokenService, JwtTokenService>();
