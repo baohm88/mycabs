@@ -283,7 +283,7 @@ namespace MyCabs.Api.Controllers;
 
 [ApiController]
 [Route("api/admin/reports")]
-[Authorize] // TODO: thêm policy/role Admin
+[Authorize(Roles = "Admin")] // CHANGED: restrict to Admin role
 public class AdminReportsController : ControllerBase
 {
     private readonly IAdminReportService _svc;
@@ -342,6 +342,10 @@ using MyCabs.Application.Services;        // IAdminReportService, AdminReportSer
 // ... sau phần đăng ký các repos/services khác
 builder.Services.AddScoped<IAdminReportRepository, AdminReportRepository>();
 builder.Services.AddScoped<IAdminReportService, AdminReportService>();
+
+// CHANGED: DI cho JWT – map interface ở Application sang implementation ở API
+// Tránh khai báo interface trùng tên ở API
+builder.Services.AddSingleton<MyCabs.Application.IJwtTokenService, MyCabs.Api.Jwt.JwtTokenService>();
 ```
 
 ---
@@ -420,4 +424,383 @@ GET /api/admin/reports/low-wallets?threshold=200000&limit=20
 - Bộ lọc thêm `status=Completed` cho aggregation nếu bạn muốn loại `Failed`.
 - Có thể thêm endpoint `GET /payments/summary-by-type` nếu cần tách chi tiết hơn (Salary/Topup/Membership).
 - Nếu cần realtime cho dashboard, bắn SignalR event khi tạo `Transaction` mới để client gọi refetch.
+
+
+
+---
+
+## 11) Realtime auto‑refresh cho Admin Dashboards (SignalR)
+
+Tự động cập nhật dashboard khi phát sinh **Transaction** mới, tái sử dụng SignalR stack đang có.
+
+### 11.1) Application – Realtime interface
+
+**Path:** `src/MyCabs.Application/Realtime/IAdminRealtime.cs`
+
+```csharp
+namespace MyCabs.Application.Realtime;
+
+using MyCabs.Application.DTOs;
+
+public interface IAdminRealtime
+{
+    Task TxCreatedAsync(TransactionDto dto);
+}
+```
+
+### 11.2) API – Hub & Notifier
+
+**A. Hub**\
+**Path:** `src/MyCabs.Api/Hubs/AdminHub.cs`
+
+```csharp
+using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.SignalR;
+
+namespace MyCabs.Api.Hubs;
+
+[Authorize(Roles = "Admin")] // CHANGED: admin-only hub
+public class AdminHub : Hub
+{
+    public override async Task OnConnectedAsync()
+    {
+        var role = Context.User?.FindFirst(ClaimTypes.Role)?.Value
+                   ?? Context.User?.FindFirst("role")?.Value;
+        if (string.Equals(role, "Admin", StringComparison.OrdinalIgnoreCase))
+            await Groups.AddToGroupAsync(Context.ConnectionId, "admins");
+
+        await base.OnConnectedAsync();
+    }
+
+    public override async Task OnDisconnectedAsync(Exception? exception)
+    {
+        var role = Context.User?.FindFirst(ClaimTypes.Role)?.Value
+                   ?? Context.User?.FindFirst("role")?.Value;
+        if (string.Equals(role, "Admin", StringComparison.OrdinalIgnoreCase))
+            await Groups.RemoveFromGroupAsync(Context.ConnectionId, "admins");
+
+        await base.OnDisconnectedAsync(exception);
+    }
+}
+```
+
+**B. Notifier**\
+**Path:** `src/MyCabs.Api/Realtime/AdminHubNotifier.cs`
+
+```csharp
+using Microsoft.AspNetCore.SignalR;
+using MyCabs.Api.Hubs;
+using MyCabs.Application.DTOs;
+using MyCabs.Application.Realtime;
+
+namespace MyCabs.Api.Realtime;
+
+public class AdminHubNotifier : IAdminRealtime
+{
+    private readonly IHubContext<AdminHub> _hub;
+    public AdminHubNotifier(IHubContext<AdminHub> hub) { _hub = hub; }
+
+    public Task TxCreatedAsync(TransactionDto dto)
+        => _hub.Clients.Group("admins").SendAsync("admin:tx:new", dto);
+}
+```
+
+### 11.3) Program.cs – Đăng ký DI & map hub
+
+**Path:** `src/MyCabs.Api/Program.cs`
+
+```csharp
+// using MyCabs.Application.Realtime; // add
+// using MyCabs.Api.Realtime;         // add
+// using MyCabs.Api.Hubs;             // add
+
+// ... DI (sau phần Services/AddSignalR và các repo/service khác)
+builder.Services.AddSingleton<IAdminRealtime, AdminHubNotifier>();
+
+// ... Endpoints
+app.MapHub<AdminHub>("/hubs/admin");
+```
+
+> Lưu ý: Bạn đã có `builder.Services.AddSignalR();` ở trên cho Notifications – giữ nguyên.
+
+### 11.4) Application – Hook trong FinanceService
+
+Gọi realtime sau khi tạo **Transaction** để dashboard refetch ngay.
+
+**Path:** `src/MyCabs.Application/Services/FinanceService.cs`
+
+- Thêm `using MyCabs.Application.Realtime;`
+- Bổ sung dependency và gọi notifier ở 3 luồng: TopUp, PaySalary, PayMembership
+
+```csharp
+using MyCabs.Application.Realtime; // <— add
+
+public class FinanceService : IFinanceService
+{
+    private readonly IWalletRepository _wallets;
+    private readonly ITransactionRepository _txs;
+    private readonly IDriverRepository _drivers;
+    private readonly ICompanyRepository _companies;
+    private readonly IConfiguration _cfg;
+    private readonly INotificationService _notif;
+    private readonly IAdminRealtime _adminRt;          // <— add
+
+    public FinanceService(
+        IWalletRepository wallets,
+        ITransactionRepository txs,
+        IDriverRepository drivers,
+        ICompanyRepository companies,
+        IConfiguration cfg,
+        INotificationService notif,
+        IAdminRealtime adminRt)                          // <— add
+    {
+        _wallets = wallets; _txs = txs; _drivers = drivers; _companies = companies;
+        _cfg = cfg; _notif = notif; _adminRt = adminRt;   // <— add
+    }
+
+    // ... (giữ nguyên các helper Map(...))
+
+    public async Task<bool> TopUpCompanyAsync(string companyId, TopUpDto dto)
+    {
+        var w = await _wallets.GetOrCreateAsync("Company", companyId);
+        await _wallets.CreditAsync(w.Id.ToString(), dto.Amount);
+        var tx = new Transaction
+        {
+            Id = ObjectId.GenerateNewId(),
+            Type = "Topup",
+            Status = "Completed",
+            Amount = dto.Amount,
+            FromWalletId = null,
+            ToWalletId = w.Id,
+            CompanyId = ObjectId.Parse(companyId),
+            DriverId = null,
+            Note = dto.Note,
+            CreatedAt = DateTime.UtcNow
+        };
+        await _txs.CreateAsync(tx);
+        await _adminRt.TxCreatedAsync(Map(tx));           // <— push realtime
+        return true;
+    }
+
+    public async Task<(bool ok, string? err)> PaySalaryAsync(string companyId, PaySalaryDto dto)
+    {
+        var compW = await _wallets.GetOrCreateAsync("Company", companyId);
+        var driver = await _drivers.GetByUserIdAsync(dto.DriverId) ?? throw new InvalidOperationException("DRIVER_NOT_FOUND");
+        var drvW = await _wallets.GetOrCreateAsync("Driver", driver.Id.ToString());
+        var debited = await _wallets.TryDebitAsync(compW.Id.ToString(), dto.Amount);
+        var tx = new Transaction
+        {
+            Id = ObjectId.GenerateNewId(),
+            Type = "Salary",
+            Status = debited ? "Completed" : "Failed",
+            Amount = dto.Amount,
+            FromWalletId = compW.Id,
+            ToWalletId = drvW.Id,
+            CompanyId = ObjectId.Parse(companyId),
+            DriverId = driver.Id,
+            Note = dto.Note,
+            CreatedAt = DateTime.UtcNow
+        };
+        await _txs.CreateAsync(tx);
+        await _adminRt.TxCreatedAsync(Map(tx));           // <— push realtime
+        if (!debited) return (false, "INSUFFICIENT_FUNDS");
+
+        await _wallets.CreditAsync(drvW.Id.ToString(), dto.Amount);
+        var company = await _companies.GetByIdAsync(companyId);
+        var freshWallet = await _wallets.GetOrCreateAsync("Company", companyId);
+        if (company != null)
+            await MaybeNotifyLowBalanceAsync(company.OwnerUserId.ToString(), freshWallet);
+        return (true, null);
+    }
+
+    public async Task<(bool ok, string? err)> PayMembershipAsync(string companyId, PayMembershipDto dto)
+    {
+        var compW = await _wallets.GetOrCreateAsync("Company", companyId);
+        var debited = dto.Amount <= 0 ? true : await _wallets.TryDebitAsync(compW.Id.ToString(), dto.Amount);
+        var tx = new Transaction
+        {
+            Id = ObjectId.GenerateNewId(),
+            Type = "Membership",
+            Status = debited ? "Completed" : "Failed",
+            Amount = dto.Amount,
+            FromWalletId = compW.Id,
+            ToWalletId = null,
+            CompanyId = ObjectId.Parse(companyId),
+            DriverId = null,
+            Note = dto.Note ?? $"Plan={dto.Plan}; Cycle={dto.BillingCycle}",
+            CreatedAt = DateTime.UtcNow
+        };
+        await _txs.CreateAsync(tx);
+        await _adminRt.TxCreatedAsync(Map(tx));           // <— push realtime
+        if (!debited) return (false, "INSUFFICIENT_FUNDS");
+
+        var expires = DateTime.UtcNow.AddMonths(dto.BillingCycle == "quarterly" ? 3 : 1);
+        await _companies.UpdateMembershipAsync(companyId, new MembershipInfo
+        {
+            Plan = dto.Plan,
+            BillingCycle = dto.BillingCycle,
+            ExpiresAt = expires
+        });
+
+        var company = await _companies.GetByIdAsync(companyId);
+        var freshWallet = await _wallets.GetOrCreateAsync("Company", companyId);
+        if (company != null)
+            await MaybeNotifyLowBalanceAsync(company.OwnerUserId.ToString(), freshWallet);
+        return (true, null);
+    }
+}
+```
+
+### 11.5) Frontend gợi ý (admin): subscribe và refetch
+
+```ts
+import * as signalR from "@microsoft/signalr";
+
+const conn = new signalR.HubConnectionBuilder()
+  .withUrl("/hubs/admin", { accessTokenFactory: () => accessToken })
+  .withAutomaticReconnect()
+  .build();
+
+conn.on("admin:tx:new", (tx) => {
+  // tx: TransactionDto — gọi lại APIs / cập nhật chart, bảng
+  refetchAll();
+});
+
+await conn.start();
+```
+
+**Test nhanh:** chạy 1 request TopUp/Salary/Membership → mở console frontend, thấy event `admin:tx:new` bắn về.
+
+
+
+---
+
+## 11.6) Bổ sung JWT Bearer cho hub `/hubs/admin`
+
+Trong `Program.cs`, mở rộng hook nhận token từ query cho **SignalR Admin Hub** (ngoài Notifications đã có) **và đảm bảo map đúng role claim**:
+
+```csharp
+using System.Security.Claims; // NEW
+using Microsoft.IdentityModel.Tokens;
+
+builder.Services
+    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(o =>
+    {
+        o.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = builder.Configuration["Jwt:Issuer"],
+            ValidAudience = builder.Configuration["Jwt:Audience"],
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]!)),
+            RoleClaimType = ClaimTypes.Role // NEW: để [Authorize(Roles="Admin")] hoạt động khi token dùng claim role chuẩn
+            // Nếu token của bạn dùng key "role" thuần: thay bằng RoleClaimType = "role"
+        };
+
+        o.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = ctx =>
+            {
+                var accessToken = ctx.Request.Query["access_token"].ToString();
+                var path = ctx.HttpContext.Request.Path;
+                if (!string.IsNullOrEmpty(accessToken) &&
+                    (path.StartsWithSegments("/hubs/notifications") || path.StartsWithSegments("/hubs/admin")))
+                {
+                    ctx.Token = accessToken;
+                }
+                return Task.CompletedTask;
+            }
+        };
+    });
+```
+
+> **Ghi chú:** Đảm bảo JWT chứa claim vai trò là **Admin**. Ví dụ lúc phát token, thêm claim `new Claim(ClaimTypes.Role, "Admin")`. `/hubs/admin`
+
+Trong `Program.cs`, mở rộng hook nhận token từ query cho **SignalR Admin Hub** (ngoài Notifications đã có):
+
+```csharp
+// ... bên trong AddJwtBearer(...)
+OnMessageReceived = ctx =>
+{
+    var accessToken = ctx.Request.Query["access_token"].ToString();
+    var path = ctx.HttpContext.Request.Path;
+    if (!string.IsNullOrEmpty(accessToken) &&
+        (path.StartsWithSegments("/hubs/notifications") || path.StartsWithSegments("/hubs/admin")))
+    {
+        ctx.Token = accessToken;
+    }
+    return Task.CompletedTask;
+}
+```
+
+> Việc này cho phép client SignalR truyền `?access_token=...` khi kết nối tới `/hubs/admin`.
+
+
+
+---
+
+## 12) JWT Token – thêm role claim (Admin) & khớp interface `Application.IJwtTokenService`
+
+**Path:** `src/MyCabs.Api/Jwt/JwtTokenService.cs`\
+**Status:** CHANGED – class `JwtTokenService` **implement** `MyCabs.Application.IJwtTokenService` và method **phải tên **`` (khớp `Application/IJwtTokenService.cs`). Đồng thời **không** khai báo interface `IJwtTokenService` ở API để tránh mơ hồ namespace.
+
+```csharp
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text;
+using Microsoft.Extensions.Configuration;
+using Microsoft.IdentityModel.Tokens;
+using MyCabs.Domain.Entities;
+
+namespace MyCabs.Api.Jwt;
+
+public class JwtTokenService : MyCabs.Application.IJwtTokenService
+{
+    private readonly IConfiguration _cfg;
+    public JwtTokenService(IConfiguration cfg) { _cfg = cfg; }
+
+    // CHANGED: đúng chữ ký interface ở Application
+    public string Generate(User user)
+    {
+        var issuer   = _cfg["Jwt:Issuer"]   ?? "mycabs.local";
+        var audience = _cfg["Jwt:Audience"] ?? "mycabs.local";
+        var key      = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_cfg["Jwt:Key"]!));
+        var creds    = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+        var minutes  = int.TryParse(_cfg["Jwt:AccessTokenMinutes"], out var m) ? m : 120;
+        var expires  = DateTime.UtcNow.AddMinutes(minutes);
+
+        var role = string.IsNullOrWhiteSpace(user.Role) ? "User" : user.Role;
+
+        var claims = new List<Claim>
+        {
+            new(JwtRegisteredClaimNames.Sub,  user.Id.ToString()),
+            new(JwtRegisteredClaimNames.Email,user.Email ?? string.Empty),
+            new(JwtRegisteredClaimNames.Jti,  Guid.NewGuid().ToString()),
+            // NEW: role claim để [Authorize(Roles="Admin")] hoạt động
+            new(ClaimTypes.Role, role),
+            new("role", role) // mirror nếu client đọc key "role"
+        };
+
+        var token = new JwtSecurityToken(
+            issuer: issuer,
+            audience: audience,
+            claims: claims,
+            notBefore: DateTime.UtcNow,
+            expires: expires,
+            signingCredentials: creds
+        );
+
+        return new JwtSecurityTokenHandler().WriteToken(token);
+    }
+}
+```
+
+**Ghi chú:**
+
+- Nếu từng có file interface `src/MyCabs.Api/Jwt/IJwtTokenService.cs` thì **xoá** để tránh trùng với `MyCabs.Application.IJwtTokenService`.
+- Trong `Program.cs` đã thêm DI: `AddSingleton<MyCabs.Application.IJwtTokenService, MyCabs.Api.Jwt.JwtTokenService>()`.
+- `JwtBearer` đã set `RoleClaimType = ClaimTypes.Role` và `OnMessageReceived` hỗ trợ `/hubs/notifications` & `/hubs/admin` (xem mục 11.6).
 
