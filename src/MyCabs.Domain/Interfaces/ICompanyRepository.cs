@@ -12,4 +12,5 @@ public interface ICompanyRepository
     Task EnsureIndexesAsync();
     Task UpdateMembershipAsync(string companyId, MembershipInfo info);
     Task<bool> UpdateMainAsync(string ownerUserId, string? name, string? description, string? address);
+    Task<Company?> GetByOwnerUserIdAsync(string ownerUserId);
 }

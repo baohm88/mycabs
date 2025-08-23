@@ -101,4 +101,10 @@ public class CompanyRepository : ICompanyRepository, IIndexInitializer
         var res = await _col.UpdateOneAsync(x => x.OwnerUserId == oid, update);
         return res.ModifiedCount > 0;
     }
+
+    public async Task<Company?> GetByOwnerUserIdAsync(string ownerUserId)
+    {
+        if (!ObjectId.TryParse(ownerUserId, out var oid)) return null;
+        return await _col.Find(x => x.OwnerUserId == oid).FirstOrDefaultAsync();
+    }
 }

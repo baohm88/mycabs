@@ -132,56 +132,106 @@ public class AuthController : ControllerBase
     }
 
     // Helper: build payload profile cho FE
+    // private async Task<object?> BuildProfileAsync(string userId)
+    // {
+    //     var u = await _users.GetByIdAsync(userId);
+    //     if (u == null) return null;
+
+    //     var role = u.Role ?? "User";
+    //     object? driver = null;
+    //     object? company = null;
+
+    //     if (string.Equals(role, "Driver", StringComparison.OrdinalIgnoreCase))
+    //     {
+    //         var d = await _drivers.GetByUserIdAsync(userId);
+    //         if (d != null)
+    //             driver = new
+    //             {
+    //                 id = d.Id.ToString(),
+    //                 userId = d.UserId.ToString(),
+    //                 companyId = d.CompanyId?.ToString(),
+    //                 status = d.Status,
+    //                 phone = d.Phone,
+    //                 bio = d.Bio
+    //             };
+    //     }
+    //     else if (string.Equals(role, "Company", StringComparison.OrdinalIgnoreCase))
+    //     {
+    //         var c = await _companies.GetByOwnerUserIdAsync(userId);
+    //         if (c != null)
+    //             company = new
+    //             {
+    //                 id = c.Id.ToString(),
+    //                 ownerUserId = c.OwnerUserId.ToString(),
+    //                 name = c.Name,
+    //                 description = c.Description,
+    //                 address = c.Address
+    //             };
+    //     }
+
+    //     var user = new
+    //     {
+    //         id = u.Id.ToString(),
+    //         email = u.Email,
+    //         fullName = u.FullName,
+    //         role,
+    //         emailVerified = u.EmailVerified
+    //     };
+
+    //     return new { user, driver, company };
+    // }
+
+    // helper to shape profile
     private async Task<object?> BuildProfileAsync(string userId)
     {
         var u = await _users.GetByIdAsync(userId);
         if (u == null) return null;
 
-        var role = u.Role ?? "User";
-        object? driver = null;
-        object? company = null;
+        // ALWAYS try to load related docs, regardless of role string
+        var d = await _drivers.GetByUserIdAsync(userId);
+        var c = await _companies.GetByOwnerUserIdAsync(userId);
 
-        if (string.Equals(role, "Driver", StringComparison.OrdinalIgnoreCase))
-        {
-            var d = await _drivers.GetByUserIdAsync(userId);
-            if (d != null)
-                driver = new
-                {
-                    id = d.Id.ToString(),
-                    userId = d.UserId.ToString(),
-                    companyId = d.CompanyId?.ToString(),
-                    status = d.Status,
-                    phone = d.Phone,
-                    bio = d.Bio
-                };
-        }
-        else if (string.Equals(role, "Company", StringComparison.OrdinalIgnoreCase))
-        {
-            // Lấy company đầu tiên do user sở hữu (đủ dùng cho MVP)
-            var (items, _) = await _companies.FindAsync(1, 1, null, null, null, null);
-            var c = items.FirstOrDefault(x => x.OwnerUserId.ToString() == userId);
-            if (c != null)
-                company = new
-                {
-                    id = c.Id.ToString(),
-                    ownerUserId = c.OwnerUserId.ToString(),
-                    name = c.Name,
-                    description = c.Description,
-                    address = c.Address
-                };
-        }
+        object? driver = null;
+        if (d != null)
+            driver = new
+            {
+                id = d.Id.ToString(),
+                userId = d.UserId.ToString(),
+                companyId = d.CompanyId?.ToString(),
+                status = d.Status,
+                phone = d.Phone,
+                bio = d.Bio
+            };
+
+        object? company = null;
+        if (c != null)
+            company = new
+            {
+                id = c.Id.ToString(),
+                ownerUserId = c.OwnerUserId.ToString(),
+                name = c.Name,
+                description = c.Description,
+                address = c.Address
+            };
+
+        // If Role is missing, infer from available docs; otherwise keep original
+        var effectiveRole =
+            !string.IsNullOrWhiteSpace(u.Role) ? u.Role! :
+            driver != null ? "Driver" :
+            company != null ? "Company" : "User";
 
         var user = new
         {
             id = u.Id.ToString(),
             email = u.Email,
             fullName = u.FullName,
-            role,
+            role = effectiveRole,
             emailVerified = u.EmailVerified
         };
 
         return new { user, driver, company };
     }
+
 
     [HttpPost("register")]
     [AllowAnonymous]
