@@ -31,7 +31,7 @@ public class OtpController : ControllerBase
         }
     }
 
-    [HttpPost("verify")] // body: { email, purpose, code }
+    [HttpPost("verify_email")] // body: { email, purpose, code }
     public async Task<IActionResult> Verify([FromBody] VerifyEmailOtpDto dto)
     {
         var ok = await _svc.VerifyAsync(dto);
@@ -39,7 +39,7 @@ public class OtpController : ControllerBase
         return Ok(ApiEnvelope.Ok(HttpContext, new { verified = true }));
     }
 
-    [HttpPost("reset-password")] // body: { email, code, newPassword }
+    [HttpPost("reset_password")] // body: { email, code, newPassword }
     public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordWithOtpDto dto)
     {
         var ok = await _svc.ResetPasswordWithOtpAsync(dto);

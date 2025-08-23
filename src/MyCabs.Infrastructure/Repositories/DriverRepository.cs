@@ -71,6 +71,15 @@ public class DriverRepository : IDriverRepository, IIndexInitializer
         return (items, total);
     }
 
-    
+    public async Task<bool> UpdateProfileAsync(string userId, string? phone, string? bio)
+    {
+        if (!ObjectId.TryParse(userId, out var uid)) return false;
+        var update = Builders<Driver>.Update
+            .Set(d => d.Phone, phone)
+            .Set(d => d.Bio, bio)
+            .Set(d => d.UpdatedAt, DateTime.UtcNow);
+        var res = await _col.UpdateOneAsync(d => d.UserId == uid, update);
+        return res.ModifiedCount > 0;
+    }   
 
 }

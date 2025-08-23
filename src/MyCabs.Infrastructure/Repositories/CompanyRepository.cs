@@ -89,4 +89,16 @@ public class CompanyRepository : ICompanyRepository, IIndexInitializer
         var update = Builders<Company>.Update.Set(x => x.Membership, info).Set(x => x.UpdatedAt, DateTime.UtcNow);
         return _col.UpdateOneAsync(x => x.Id == oid, update);
     }
+
+    public async Task<bool> UpdateMainAsync(string ownerUserId, string? name, string? description, string? address)
+    {
+        if (!ObjectId.TryParse(ownerUserId, out var oid)) return false;
+        var update = Builders<Company>.Update
+            .Set(x => x.Name, string.IsNullOrWhiteSpace(name) ? (string?)null : name)
+            .Set(x => x.Description, description)
+            .Set(x => x.Address, address)
+            .Set(x => x.UpdatedAt, DateTime.UtcNow);
+        var res = await _col.UpdateOneAsync(x => x.OwnerUserId == oid, update);
+        return res.ModifiedCount > 0;
+    }
 }

@@ -8,5 +8,6 @@ public interface IDriverRepository
     Task<Driver> CreateIfMissingAsync(string userId);
     Task SetCompanyAsync(string driverId, string companyId);
     Task<(IEnumerable<Driver> Items, long Total)> FindAsync(int page, int pageSize, string? search, string? companyId, string? sort);
+    Task<bool> UpdateProfileAsync(string userId, string? phone, string? bio);
 
 }

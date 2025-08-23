@@ -8,7 +8,7 @@ namespace MyCabs.Application.Services;
 
 public interface IAuthService
 {
-    Task<(bool ok, string? error, string? token)> RegisterAsync(RegisterDto dto);
+    Task<(bool ok, string? error)> RegisterAsync(RegisterDto dto);
     Task<(bool ok, string? error, string? token)> LoginAsync(LoginDto dto);
 }
 
@@ -18,14 +18,14 @@ public class AuthService : IAuthService
     private readonly IJwtTokenService _jwt;
     public AuthService(IUserRepository users, IJwtTokenService jwt) { _users = users; _jwt = jwt; }
 
-    public async Task<(bool ok, string? error, string? token)> RegisterAsync(RegisterDto dto)
+    public async Task<(bool ok, string? error)> RegisterAsync(RegisterDto dto)
     {
         // 1) chuẩn hoá email nhập vào
         var emailLower = dto.Email.Trim().ToLowerInvariant();
 
         // 2) kiểm tra tồn tại theo EmailLower
         var existed = await _users.GetByEmailAsync(emailLower);
-        if (existed != null) return (false, "Email already exists", null);
+        if (existed != null) return (false, "Email already exists");
         var user = new User
         {
             Id = ObjectId.GenerateNewId(),
@@ -40,8 +40,8 @@ public class AuthService : IAuthService
             UpdatedAt = DateTime.UtcNow
         };
         await _users.CreateAsync(user);
-        var token = _jwt.Generate(user);
-        return (true, null, token);
+        // var token = _jwt.Generate(user);
+        return (true, null);
     }
 
     public async Task<(bool ok, string? error, string? token)> LoginAsync(LoginDto dto)

@@ -1,4 +1,5 @@
 using MongoDB.Driver;
+using MongoDB.Bson;
 using MyCabs.Domain.Entities;
 using MyCabs.Domain.Interfaces;
 using MyCabs.Infrastructure.Persistence;
@@ -52,6 +53,20 @@ public class UserRepository : IUserRepository, IIndexInitializer
             .Set(x => x.PasswordHash, newHash)
             .Set(x => x.UpdatedAt, DateTime.UtcNow);
         var res = await _col.UpdateOneAsync(x => x.EmailLower == emailLower, upd);
+        return res.ModifiedCount > 0;
+    }
+
+    public async Task<User?> GetByIdAsync(string id)
+    {
+        if (!ObjectId.TryParse(id, out var oid)) return null;
+        return await _col.Find(x => x.Id == oid).FirstOrDefaultAsync();
+    }
+
+    public async Task<bool> UpdateFullNameAsync(string id, string fullName)
+    {
+        if (!ObjectId.TryParse(id, out var oid)) return false;
+        var upd = Builders<User>.Update.Set(x => x.FullName, fullName).Set(x => x.UpdatedAt, DateTime.UtcNow);
+        var res = await _col.UpdateOneAsync(x => x.Id == oid, upd);
         return res.ModifiedCount > 0;
     }
 }

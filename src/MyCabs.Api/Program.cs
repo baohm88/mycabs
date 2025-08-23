@@ -106,7 +106,8 @@ builder.Services.AddScoped<IEmailOtpService, EmailOtpService>();
 builder.Services.AddScoped<IChatRepository, ChatRepository>();
 builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddScoped<IAdminReportRepository, AdminReportRepository>();
-
+builder.Services.AddScoped<CompanyRepository>();
+builder.Services.AddScoped<UserRepository>();
 
 
 
