@@ -6,3 +6,4 @@ public record InvitationsQuery(int Page = 1, int PageSize = 10, string? Status =
 
 public record ApplicationDto(string Id, string DriverId, string CompanyId, string Status, DateTime CreatedAt);
 public record InvitationDto(string Id, string CompanyId, string DriverId, string Status, DateTime CreatedAt, string? Note);
+public record DriverApplyDto(string CompanyId);

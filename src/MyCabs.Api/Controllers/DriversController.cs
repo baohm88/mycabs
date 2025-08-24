@@ -16,7 +16,8 @@ public class DriversController : ControllerBase
     private readonly IDriverService _svc;
     private readonly IDriverRepository _drivers;
     private readonly ICompanyRepository _companies;
-    public DriversController(IDriverService svc, IDriverRepository drivers, ICompanyRepository companies) { _svc = svc; _drivers = drivers; _companies = companies; }
+    private readonly IHiringService _hiring;
+    public DriversController(IDriverService svc, IDriverRepository drivers, ICompanyRepository companies, IHiringService hiring) { _svc = svc; _drivers = drivers; _companies = companies; _hiring = hiring; }
 
 
     [HttpGet("openings")]
@@ -52,7 +53,7 @@ public class DriversController : ControllerBase
 
     [Authorize(Roles = "Driver")]
     [HttpPost("apply")]
-    public async Task<IActionResult> Apply([FromBody] DriverApplyDto dto)
+    public async Task<IActionResult> Apply([FromBody] DriverApplyDto dto, [FromServices] IHiringService hiring)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
                      ?? User.FindFirstValue("sub")
@@ -62,7 +63,7 @@ public class DriversController : ControllerBase
 
         try
         {
-            await _svc.ApplyAsync(userId, dto);
+            await hiring.ApplyAsync(userId, dto);
             return Ok(ApiEnvelope.Ok(HttpContext, new { message = "Application submitted" }));
         }
         catch (InvalidOperationException ex) when (ex.Message == "COMPANY_NOT_FOUND")
@@ -118,11 +119,22 @@ public class DriversController : ControllerBase
 
     [Authorize(Roles = "Driver")]
     [HttpGet("me/applications")]
-    public async Task<IActionResult> MyApplications([FromServices] IHiringService hiring, [FromQuery] ApplicationsQuery q)
+    public async Task<IActionResult> MyApplications([FromQuery] ApplicationsQuery q)
     {
-        var uid = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub") ?? string.Empty;
-        try { var (items, total) = await hiring.GetMyApplicationsAsync(uid, q); return Ok(ApiEnvelope.Ok(HttpContext, new PagedResult<ApplicationDto>(items, q.Page, q.PageSize, total))); }
-        catch (InvalidOperationException ex) when (ex.Message == "DRIVER_NOT_FOUND") { return NotFound(ApiEnvelope.Fail(HttpContext, "DRIVER_NOT_FOUND", "Driver not found", 404)); }
+        var uid = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                  ?? User.FindFirstValue("sub")
+                  ?? string.Empty;
+
+        try
+        {
+            var (items, total) = await _hiring.GetMyApplicationsAsync(uid, q);   // CHANGED: dùng _hiring
+            return Ok(ApiEnvelope.Ok(HttpContext,
+                new PagedResult<ApplicationDto>(items, q.Page, q.PageSize, total)));
+        }
+        catch (InvalidOperationException ex) when (ex.Message == "DRIVER_NOT_FOUND")
+        {
+            return NotFound(ApiEnvelope.Fail(HttpContext, "DRIVER_NOT_FOUND", "Driver not found", 404));
+        }
     }
 
     [Authorize(Roles = "Driver")]

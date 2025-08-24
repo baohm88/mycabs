@@ -83,7 +83,6 @@ public class ApplicationRepository : IApplicationRepository, IIndexInitializer
             DriverId = ObjectId.Parse(driverId),
             Status = "Pending",
             CreatedAt = DateTime.UtcNow
-            // Nếu entity không có UpdatedAt thì bỏ qua
         };
         return _col.InsertOneAsync(doc);
     }
