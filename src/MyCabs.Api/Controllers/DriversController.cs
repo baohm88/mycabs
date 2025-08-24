@@ -10,27 +10,52 @@ namespace MyCabs.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class DriversController : ControllerBase
 {
     private readonly IDriverService _svc;
     private readonly IDriverRepository _drivers;
-    public DriversController(IDriverService svc, IDriverRepository drivers) { _svc = svc; _drivers = drivers; }
+    private readonly ICompanyRepository _companies;
+    public DriversController(IDriverService svc, IDriverRepository drivers, ICompanyRepository companies) { _svc = svc; _drivers = drivers; _companies = companies; }
 
 
     [HttpGet("openings")]
-    public async Task<IActionResult> GetOpenings([FromQuery] CompaniesQuery q)
+    public async Task<IActionResult> Openings(
+        [FromQuery] string? search = null,
+        [FromQuery] string? serviceType = null,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20)
     {
-        var (items, total) = await _svc.GetOpeningsAsync(q);
-        var payload = new PagedResult<CompanyDto>(items, q.Page <= 0 ? 1 : q.Page, q.PageSize <= 0 ? 10 : q.PageSize, total);
-        return Ok(ApiEnvelope.Ok(HttpContext, payload));
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
+             ?? User.FindFirstValue("sub")
+             ?? string.Empty;
+        var me = await _drivers.GetByUserIdAsync(userId);
+        var (items, total) = await _companies.FindAsync(page, pageSize, search, plan: null, serviceType: serviceType, sort: null);
+
+        var now = DateTime.UtcNow;
+        var list = items.Select(c => new DriverOpeningDto(
+            c.Id.ToString(),
+            c.Name ?? string.Empty,
+            c.Address,
+            c.Membership?.Plan ?? "Free",
+            c.Membership?.ExpiresAt,
+            (c.Services ?? new List<MyCabs.Domain.Entities.CompanyServiceItem>())
+                .Select(s => new DriverOpeningServiceDto(s.Type, s.Title, s.BasePrice)),
+            // CanApply rules: chưa là nhân viên của company đó, company còn hạn (nếu có), có ít nhất 1 service
+            (me?.CompanyId == null || me.CompanyId != c.Id)
+            && (c.Membership?.ExpiresAt == null || c.Membership!.ExpiresAt > now)
+            && (c.Services != null && c.Services.Count > 0)
+        ));
+
+        return Ok(ApiEnvelope.Ok(HttpContext, new PagedResult<DriverOpeningDto>(list, page, pageSize, total)));
     }
 
     [Authorize(Roles = "Driver")]
     [HttpPost("apply")]
     public async Task<IActionResult> Apply([FromBody] DriverApplyDto dto)
     {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) // sometimes mapped
-                     ?? User.FindFirstValue("sub")                     // JwtRegisteredClaimNames.Sub
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                     ?? User.FindFirstValue("sub")
                      ?? string.Empty;
         if (string.IsNullOrEmpty(userId))
             return Unauthorized(ApiEnvelope.Fail(HttpContext, "UNAUTHORIZED", "Authentication is required", 401));

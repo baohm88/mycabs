@@ -41,11 +41,29 @@ public class DriverRepository : IDriverRepository, IIndexInitializer
         await _col.UpdateOneAsync(x => x.Id == did, update);
     }
 
+    // public async Task EnsureIndexesAsync()
+    // {
+    //     var ix = new List<CreateIndexModel<Driver>>
+    //     {
+    //         new(CreateIndexKeys<Driver>.Ascending(x => x.UserId), new CreateIndexOptions { Unique = true }),
+    //         new(CreateIndexKeys<Driver>.Ascending(x => x.CompanyId)),
+    //         new(CreateIndexKeys<Driver>.Ascending(x => x.Status))
+    //     };
+    //     await _col.Indexes.CreateManyAsync(ix);
+    // }
+
     public async Task EnsureIndexesAsync()
     {
-        var ix1 = new CreateIndexModel<Driver>(Builders<Driver>.IndexKeys.Ascending(x => x.UserId), new CreateIndexOptions { Unique = true });
-        var ix2 = new CreateIndexModel<Driver>(Builders<Driver>.IndexKeys.Ascending(x => x.CompanyId));
-        await _col.Indexes.CreateManyAsync(new[] { ix1, ix2 });
+        var keys = Builders<Driver>.IndexKeys;
+
+        var ix = new List<CreateIndexModel<Driver>>
+    {
+        new(keys.Ascending(x => x.UserId),   new CreateIndexOptions { Unique = true }),
+        new(keys.Ascending(x => x.CompanyId)),
+        new(keys.Ascending(x => x.Status))
+    };
+
+        await _col.Indexes.CreateManyAsync(ix);
     }
 
     public async Task<(IEnumerable<Driver> Items, long Total)> FindAsync(int page, int pageSize, string? search, string? companyId, string? sort)
@@ -74,12 +92,99 @@ public class DriverRepository : IDriverRepository, IIndexInitializer
     public async Task<bool> UpdateProfileAsync(string userId, string? phone, string? bio)
     {
         if (!ObjectId.TryParse(userId, out var uid)) return false;
+
+        var updates = new List<UpdateDefinition<Driver>>
+    {
+        Builders<Driver>.Update.Set(d => d.UpdatedAt, DateTime.UtcNow)
+    };
+        if (phone != null) updates.Add(Builders<Driver>.Update.Set(d => d.Phone, phone));
+        if (bio != null) updates.Add(Builders<Driver>.Update.Set(d => d.Bio, bio));
+
         var update = Builders<Driver>.Update
-            .Set(d => d.Phone, phone)
-            .Set(d => d.Bio, bio)
-            .Set(d => d.UpdatedAt, DateTime.UtcNow);
-        var res = await _col.UpdateOneAsync(d => d.UserId == uid, update);
-        return res.ModifiedCount > 0;
-    }   
+            .Combine(updates)
+            .SetOnInsert(d => d.Id, ObjectId.GenerateNewId())
+            .SetOnInsert(d => d.UserId, uid)
+            .SetOnInsert(d => d.Status, "available")
+            .SetOnInsert(d => d.CreatedAt, DateTime.UtcNow);
+
+        var res = await _col.UpdateOneAsync(
+            filter: d => d.UserId == uid,
+            update: update,
+            options: new UpdateOptions { IsUpsert = true }
+        );
+
+        return res.ModifiedCount > 0 || res.UpsertedId != null;
+    }
+
+    public async Task<Driver> EnsureForUserAsync(string userId, string? phone = null, string? bio = null)
+    {
+        if (!ObjectId.TryParse(userId, out var uid))
+            throw new ArgumentException("Invalid userId", nameof(userId));
+
+        var exist = await _col.Find(x => x.UserId == uid).FirstOrDefaultAsync();
+        if (exist != null) return exist;
+
+        var now = DateTime.UtcNow;
+        var doc = new Driver
+        {
+            Id = ObjectId.GenerateNewId(),
+            UserId = uid,
+            CompanyId = null,
+            Status = "available",
+            Phone = phone,
+            Bio = bio,
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+        await _col.InsertOneAsync(doc);
+        return doc;
+    }
+
+
+    public async Task<Driver> UpsertMainByUserAsync(string userId, string? fullName, string? phone, string? bio)
+    {
+        if (!ObjectId.TryParse(userId, out var uid))
+            throw new ArgumentException("Invalid userId", nameof(userId));
+
+        var updates = new List<UpdateDefinition<Driver>>
+    {
+        Builders<Driver>.Update.Set(d => d.UpdatedAt, DateTime.UtcNow)
+    };
+        if (fullName != null) updates.Add(Builders<Driver>.Update.Set(d => d.FullName, fullName));
+        if (phone != null) updates.Add(Builders<Driver>.Update.Set(d => d.Phone, phone));
+        if (bio != null) updates.Add(Builders<Driver>.Update.Set(d => d.Bio, bio));
+
+        var update = Builders<Driver>.Update
+            .Combine(updates)
+            .SetOnInsert(d => d.Id, ObjectId.GenerateNewId())
+            .SetOnInsert(d => d.UserId, uid)
+            .SetOnInsert(d => d.Status, "available")
+            .SetOnInsert(d => d.CreatedAt, DateTime.UtcNow);
+
+        var res = await _col.UpdateOneAsync(
+            filter: d => d.UserId == uid,
+            update: update,
+            options: new UpdateOptions { IsUpsert = true }
+        );
+
+        // Lấy document vừa upsert/updated (đảm bảo non-null theo interface)
+        if (res.UpsertedId?.IsObjectId == true)
+        {
+            var insertedId = res.UpsertedId.AsObjectId;
+            var inserted = await _col.Find(x => x.Id == insertedId).FirstOrDefaultAsync();
+            if (inserted != null) return inserted;
+        }
+
+        var existing = await _col.Find(x => x.UserId == uid).FirstOrDefaultAsync();
+        if (existing != null) return existing;
+
+        throw new InvalidOperationException("Upsert failed to return a document.");
+    }
+
+    public async Task<Driver?> GetByIdAsync(string id)
+    {
+        if (!ObjectId.TryParse(id, out var oid)) return null;
+        return await _col.Find(x => x.Id == oid).FirstOrDefaultAsync();
+    }
 
 }

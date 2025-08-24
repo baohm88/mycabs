@@ -94,6 +94,8 @@ public class RidersController : ControllerBase
         var companyNameById = new Dictionary<string, string?>();
         foreach (var cid in companyIds)
         {
+            if (string.IsNullOrWhiteSpace(cid))
+                return BadRequest(ApiEnvelope.Fail(HttpContext, "INVALID_ID", "id is required", 400));
             var c = await _companies.GetByIdAsync(cid);
             companyNameById[cid] = c?.Name;
         }

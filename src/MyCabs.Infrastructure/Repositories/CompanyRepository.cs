@@ -107,4 +107,43 @@ public class CompanyRepository : ICompanyRepository, IIndexInitializer
         if (!ObjectId.TryParse(ownerUserId, out var oid)) return null;
         return await _col.Find(x => x.OwnerUserId == oid).FirstOrDefaultAsync();
     }
+
+    public async Task<Company> CreateAsync(Company c)
+    {
+        c.Id = ObjectId.GenerateNewId();
+        c.CreatedAt = DateTime.UtcNow;
+        c.UpdatedAt = DateTime.UtcNow;
+        await _col.InsertOneAsync(c);
+        return c;
+    }
+
+    public async Task<Company> UpsertMainByOwnerAsync(string ownerUserId, string? name, string? description, string? address)
+    {
+        var exist = await GetByOwnerUserIdAsync(ownerUserId);
+        if (exist == null)
+        {
+            if (!ObjectId.TryParse(ownerUserId, out var oid)) throw new ArgumentException("Invalid ownerUserId");
+            var c = new Company
+            {
+                OwnerUserId = oid,
+                Name = string.IsNullOrWhiteSpace(name) ? "New Company" : name!.Trim(),
+                Description = string.IsNullOrWhiteSpace(description) ? null : description!.Trim(),
+                Address = string.IsNullOrWhiteSpace(address) ? null : address!.Trim(),
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+            await _col.InsertOneAsync(c);
+            return c;
+        }
+        else
+        {
+            var upd = Builders<Company>.Update
+                .Set(x => x.Name, string.IsNullOrWhiteSpace(name) ? exist.Name : name!.Trim())
+                .Set(x => x.Description, string.IsNullOrWhiteSpace(description) ? exist.Description : description!.Trim())
+                .Set(x => x.Address, string.IsNullOrWhiteSpace(address) ? exist.Address : address!.Trim())
+                .Set(x => x.UpdatedAt, DateTime.UtcNow);
+            await _col.UpdateOneAsync(x => x.Id == exist.Id, upd);
+            return await GetByOwnerUserIdAsync(ownerUserId) ?? exist;
+        }
+    }
 }
