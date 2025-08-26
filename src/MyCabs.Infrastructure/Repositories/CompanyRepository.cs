@@ -146,4 +146,16 @@ public class CompanyRepository : ICompanyRepository, IIndexInitializer
             return await GetByOwnerUserIdAsync(ownerUserId) ?? exist;
         }
     }
+
+    public async Task<IEnumerable<Company>> GetByIdsAsync(IEnumerable<string> ids)
+    {
+        var oids = ids
+            .Where(s => ObjectId.TryParse(s, out _))
+            .Select(ObjectId.Parse)
+            .ToArray();
+
+        if (oids.Length == 0) return Array.Empty<Company>();
+        var f = Builders<Company>.Filter.In(x => x.Id, oids);
+        return await _col.Find(f).ToListAsync();
+    }
 }

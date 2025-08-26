@@ -3,6 +3,8 @@ using MongoDB.Driver;
 using MyCabs.Domain.Interfaces;
 using MyCabs.Infrastructure.Persistence;
 using MyCabs.Infrastructure.Startup;
+using MyCabs.Domain.Entities;
+
 
 // alias để tránh đụng tên với namespace MyCabs.Application
 using ApplicationEntity = MyCabs.Domain.Entities.Application;
@@ -12,10 +14,12 @@ namespace MyCabs.Infrastructure.Repositories;
 public class ApplicationRepository : IApplicationRepository, IIndexInitializer
 {
     private readonly IMongoCollection<ApplicationEntity> _col;
+    private readonly IMongoCollection<Driver> _drivers;
 
     public ApplicationRepository(IMongoContext ctx)
     {
         _col = ctx.GetCollection<ApplicationEntity>("applications");
+        _drivers = ctx.GetCollection<Driver>("drivers");
     }
 
     public async Task<ApplicationEntity?> GetByIdAsync(string id)
@@ -125,4 +129,59 @@ public class ApplicationRepository : IApplicationRepository, IIndexInitializer
 
         await _col.Indexes.CreateManyAsync(indexes);
     }
+
+    public async Task<(IEnumerable<ApplicationEntity> Items, long Total)> FindByCompanyAsync(string companyId, int page, int pageSize)
+    {
+        if (!ObjectId.TryParse(companyId, out var cid))
+            return (Enumerable.Empty<ApplicationEntity>(), 0);
+
+        var f = Builders<ApplicationEntity>.Filter.Eq(x => x.CompanyId, cid);
+        var total = await _col.CountDocumentsAsync(f);
+        var items = await _col.Find(f)
+            .SortByDescending(x => x.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Limit(pageSize)
+            .ToListAsync();
+
+        return (items, total);
+    }
+
+    public async Task<(IEnumerable<ApplicationEntity> Items, long Total)> FindByDriverUserAsync(string driverUserId, int page, int pageSize)
+    {
+        if (!ObjectId.TryParse(driverUserId, out var uid))
+            return (Enumerable.Empty<ApplicationEntity>(), 0);
+
+        // Trường hợp 1: collection Application có field DriverUserId => lọc trực tiếp
+        var fByUser = Builders<ApplicationEntity>.Filter.Eq("DriverUserId", uid);
+
+        var total = await _col.CountDocumentsAsync(fByUser);
+        if (total > 0)
+        {
+            var items = await _col.Find(fByUser)
+                .SortByDescending(x => x.CreatedAt)
+                .Skip((page - 1) * pageSize)
+                .Limit(pageSize)
+                .ToListAsync();
+
+            return (items, total);
+        }
+
+        // Trường hợp 2 (fallback): nếu không có DriverUserId, lookup Driver theo UserId rồi lọc theo DriverId
+        // (chỉ cần nếu schema của bạn không lưu DriverUserId trong Application)
+        // var drivers = _ctx.GetCollection<Driver>("drivers");
+        // var d = await drivers.Find(x => x.UserId == uid).FirstOrDefaultAsync();
+        var d = await _drivers.Find(x => x.UserId == uid).FirstOrDefaultAsync();
+        if (d == null) return (Enumerable.Empty<ApplicationEntity>(), 0);
+
+        var fByDriverId = Builders<ApplicationEntity>.Filter.Eq(x => x.DriverId, d.Id);
+        var total2 = await _col.CountDocumentsAsync(fByDriverId);
+        var items2 = await _col.Find(fByDriverId)
+            .SortByDescending(x => x.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Limit(pageSize)
+            .ToListAsync();
+
+        return (items2, total2);
+    }
+
 }

@@ -119,22 +119,14 @@ public class DriversController : ControllerBase
 
     [Authorize(Roles = "Driver")]
     [HttpGet("me/applications")]
-    public async Task<IActionResult> MyApplications([FromQuery] ApplicationsQuery q)
+    public async Task<IActionResult> MyApplications(
+    [FromServices] IApplicationsQueryService svc, 
+    [FromQuery] int page = 1,
+    [FromQuery] int pageSize = 20)
     {
-        var uid = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                  ?? User.FindFirstValue("sub")
-                  ?? string.Empty;
-
-        try
-        {
-            var (items, total) = await _hiring.GetMyApplicationsAsync(uid, q);   // CHANGED: dùng _hiring
-            return Ok(ApiEnvelope.Ok(HttpContext,
-                new PagedResult<ApplicationDto>(items, q.Page, q.PageSize, total)));
-        }
-        catch (InvalidOperationException ex) when (ex.Message == "DRIVER_NOT_FOUND")
-        {
-            return NotFound(ApiEnvelope.Fail(HttpContext, "DRIVER_NOT_FOUND", "Driver not found", 404));
-        }
+        var me = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+        var data = await svc.GetByDriverAsync(me, page, pageSize);
+        return Ok(ApiEnvelope.Ok(HttpContext, data));
     }
 
     [Authorize(Roles = "Driver")]

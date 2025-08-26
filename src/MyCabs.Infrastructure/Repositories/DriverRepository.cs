@@ -41,17 +41,6 @@ public class DriverRepository : IDriverRepository, IIndexInitializer
         await _col.UpdateOneAsync(x => x.Id == did, update);
     }
 
-    // public async Task EnsureIndexesAsync()
-    // {
-    //     var ix = new List<CreateIndexModel<Driver>>
-    //     {
-    //         new(CreateIndexKeys<Driver>.Ascending(x => x.UserId), new CreateIndexOptions { Unique = true }),
-    //         new(CreateIndexKeys<Driver>.Ascending(x => x.CompanyId)),
-    //         new(CreateIndexKeys<Driver>.Ascending(x => x.Status))
-    //     };
-    //     await _col.Indexes.CreateManyAsync(ix);
-    // }
-
     public async Task EnsureIndexesAsync()
     {
         var keys = Builders<Driver>.IndexKeys;
@@ -186,5 +175,18 @@ public class DriverRepository : IDriverRepository, IIndexInitializer
         if (!ObjectId.TryParse(id, out var oid)) return null;
         return await _col.Find(x => x.Id == oid).FirstOrDefaultAsync();
     }
+
+    public async Task<IEnumerable<Driver>> GetByIdsAsync(IEnumerable<string> ids)
+    {
+        var oids = ids
+            .Where(s => ObjectId.TryParse(s, out _))
+            .Select(ObjectId.Parse)
+            .ToArray();
+
+        if (oids.Length == 0) return Array.Empty<Driver>();
+        var f = Builders<Driver>.Filter.In(x => x.Id, oids);
+        return await _col.Find(f).ToListAsync();
+    }
+
 
 }

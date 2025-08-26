@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using MyCabs.Application.Services;
 using MyCabs.Domain.Interfaces;
 using MyCabs.Api.Common;
+using MyCabs.Application.DTOs;
 
 namespace MyCabs.Api.Controllers;
 

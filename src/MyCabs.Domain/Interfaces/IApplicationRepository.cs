@@ -12,4 +12,7 @@ public interface IApplicationRepository
     Task EnsureIndexesAsync();
     Task<Application?> GetByIdAsync(string appId);
     Task UpdateStatusAsync(string appId, string status);
+    Task<(IEnumerable<Application> Items, long Total)> FindByCompanyAsync(string companyId, int page, int pageSize);
+
+    Task<(IEnumerable<Application> Items, long Total)> FindByDriverUserAsync(string driverUserId, int page, int pageSize);
 }

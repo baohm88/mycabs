@@ -185,6 +185,7 @@ builder.Services.AddScoped<IRatingRepository, RatingRepository>();
 builder.Services.AddScoped<IRiderService, RiderService>();
 builder.Services.AddScoped<IAdminReportService, AdminReportService>();
 builder.Services.AddSingleton<IAdminRealtime, AdminHubNotifier>();
+builder.Services.AddScoped<IApplicationsQueryService, ApplicationsQueryService>();
 
 
 var app = builder.Build();

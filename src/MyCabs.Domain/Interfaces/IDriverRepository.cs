@@ -12,4 +12,5 @@ public interface IDriverRepository
     Task<Driver> EnsureForUserAsync(string userId, string? phone = null, string? bio = null);
     Task<bool> UpdateProfileAsync(string userId, string? phone, string? bio);
     Task<Driver> UpsertMainByUserAsync(string userId, string? fullName, string? phone, string? bio);
+    Task<IEnumerable<Driver>> GetByIdsAsync(IEnumerable<string> ids); 
 }

@@ -70,8 +70,15 @@ public class CompaniesController : ControllerBase
 
     [Authorize(Roles = "Company,Admin")]
     [HttpGet("{id}/applications")]
-    public async Task<IActionResult> GetApplications(string id, [FromQuery] ApplicationsQuery q)
-    { var (items, total) = await _hiring.GetCompanyApplicationsAsync(id, q); return Ok(ApiEnvelope.Ok(HttpContext, new PagedResult<ApplicationDto>(items, q.Page, q.PageSize, total))); }
+    public async Task<IActionResult> Applications(
+    [FromRoute] string id,
+    [FromServices] IApplicationsQueryService svc,   // <-- đưa lên trước
+    [FromQuery] int page = 1,
+    [FromQuery] int pageSize = 20)
+    {
+        var data = await svc.GetByCompanyAsync(id, page, pageSize);
+        return Ok(ApiEnvelope.Ok(HttpContext, data));
+    }
 
     [Authorize(Roles = "Company,Admin")]
     [HttpPost("{id}/applications/{appId}/approve")]
