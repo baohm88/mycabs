@@ -144,7 +144,7 @@ public class ApplicationRepository : IApplicationRepository, IIndexInitializer
         return (items, total);
     }
 
-    public async Task<(IEnumerable<AppEntity> Items, long Total)> FindByDriverUserAsync(string driverUserId, int page, int pageSize)
+    public async Task<(IEnumerable<AppEntity> Items, long Total)> FindByDriverIdAsync(string driverUserId, int page, int pageSize)
     {
         if (!ObjectId.TryParse(driverUserId, out var uid))
             return (Enumerable.Empty<AppEntity>(), 0);

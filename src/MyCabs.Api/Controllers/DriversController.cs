@@ -22,6 +22,8 @@ public class DriversController : ControllerBase
     private readonly IWalletRepository _wallets;
     private readonly ITransactionRepository _txs;
     private readonly IInvitationRepository _invites;
+    private readonly IApplicationRepository _apps;
+
     public DriversController(
         IDriverService svc,
         IDriverRepository drivers,
@@ -29,8 +31,9 @@ public class DriversController : ControllerBase
         IHiringService hiring,
         IWalletRepository wallets,
         ITransactionRepository txs,
-        IInvitationRepository invites)
-    { _svc = svc; _drivers = drivers; _companies = companies; _hiring = hiring; _wallets = wallets; _txs = txs; _invites = invites; }
+        IInvitationRepository invites,
+        IApplicationRepository apps)
+    { _svc = svc; _drivers = drivers; _companies = companies; _hiring = hiring; _wallets = wallets; _txs = txs; _invites = invites; _apps = apps; }
 
     private string CurrentUserId() => User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub") ?? string.Empty;
 
@@ -134,24 +137,35 @@ public class DriversController : ControllerBase
 
     [Authorize(Roles = "Driver")]
     [HttpGet("me/applications")]
-    public async Task<IActionResult> MyApplications([FromQuery] int page = 1, [FromQuery] int pageSize = 10)
+    public async Task<IActionResult> MyJobApps([FromQuery] int page = 1, [FromQuery] int pageSize = 10)
     {
         var me = await _drivers.GetByUserIdAsync(CurrentUserId());
-        if (me == null) return NotFound(ApiEnvelope.Fail(HttpContext, "DRIVER_NOT_FOUND", "Driver not found", 404));
+        if (me == null)
+            return NotFound(ApiEnvelope.Fail(HttpContext, "DRIVER_NOT_FOUND", "Driver not found", 404));
 
+        // Lấy danh sách đơn ứng tuyển của driver
+        var (items, total) = await _apps.FindByDriverIdAsync(CurrentUserId(), page, pageSize);
 
-        var w = await _wallets.GetOrCreateAsync("Driver", me.Id.ToString());
-        var (items, total) = await _txs.FindByWalletAsync(w.Id.ToString(), page, pageSize);
-        var list = items.Select(t => new
-        {
-            id = t.Id.ToString(),
-            type = t.Type,
-            status = t.Status,
-            amount = t.Amount,
-            note = t.Note,
-            createdAt = t.CreatedAt
-        });
-        return Ok(ApiEnvelope.Ok(HttpContext, new PagedResult<object>(list, page, pageSize, total)));
+        // Map CompanyName
+        var companyIds = items
+            .Where(a => a.CompanyId != ObjectId.Empty)
+            .Select(a => a.CompanyId.ToString())
+            .Distinct()
+            .ToArray();
+
+        var companies = await _companies.GetManyByIdsAsync(companyIds);
+        var nameById = companies.ToDictionary(c => c.Id.ToString(), c => c.Name);
+
+        var list = items.Select(a => new MyJobAppDto(
+            Id: a.Id.ToString(),
+            CompanyId: a.CompanyId != ObjectId.Empty ? a.CompanyId.ToString() : "",
+            CompanyName: a.CompanyId != ObjectId.Empty && nameById.TryGetValue(a.CompanyId.ToString(), out var nm) ? nm : null,
+            Status: a.Status,                      // ví dụ: Pending/Approved/Rejected
+            CreatedAt: a.CreatedAt,
+            Note: a.Note
+        ));
+
+        return Ok(ApiEnvelope.Ok(HttpContext, new PagedResult<MyJobAppDto>(list, page, pageSize, total)));
     }
 
     [Authorize(Roles = "Driver")]

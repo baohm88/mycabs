@@ -39,7 +39,7 @@ public class ApplicationsQueryService : IApplicationsQueryService
     public async Task<PagedResult<DriverApplicationItemDto>> GetByDriverAsync(string driverUserId, int page, int pageSize)
     {
         // giả định repo tìm theo driverUserId (nếu của bạn là driverId thì đổi tham số)
-        var (items, total) = await _apps.FindByDriverUserAsync(driverUserId, page, pageSize);
+        var (items, total) = await _apps.FindByDriverIdAsync(driverUserId, page, pageSize);
 
         var companyIds = items.Select(x => x.CompanyId.ToString()).Distinct().ToArray();
         var companies = await _companies.GetByIdsAsync(companyIds);

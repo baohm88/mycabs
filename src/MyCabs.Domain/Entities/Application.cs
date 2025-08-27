@@ -22,4 +22,6 @@ public class Application
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     [BsonElement("updatedAt")]
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+    [BsonElement("note")]
+    public string? Note { get; set; }
 }
