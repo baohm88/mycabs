@@ -45,4 +45,20 @@ public class TransactionRepository : ITransactionRepository, IIndexInitializer
         var ix5 = new CreateIndexModel<Transaction>(Builders<Transaction>.IndexKeys.Ascending(x => x.Status));
         await _col.Indexes.CreateManyAsync(new[] { ix1, ix2, ix3, ix4, ix5 });
     }
+
+    public async Task<(IEnumerable<Transaction> Items, long Total)> FindByWalletAsync(string walletId, int page, int pageSize)
+    {
+        var wid = ObjectId.Parse(walletId);
+        var f = Builders<Transaction>.Filter.Or(
+        Builders<Transaction>.Filter.Eq(x => x.FromWalletId, wid),
+        Builders<Transaction>.Filter.Eq(x => x.ToWalletId, wid)
+        );
+        var total = await _col.CountDocumentsAsync(f);
+        var items = await _col.Find(f)
+        .SortByDescending(x => x.CreatedAt)
+        .Skip((page - 1) * pageSize)
+        .Limit(pageSize)
+        .ToListAsync();
+        return (items, total);
+    }
 }

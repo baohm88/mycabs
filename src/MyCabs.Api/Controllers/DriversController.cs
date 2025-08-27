@@ -5,6 +5,7 @@ using MyCabs.Api.Common;
 using MyCabs.Application.DTOs;
 using MyCabs.Application.Services;
 using MyCabs.Domain.Interfaces;
+using MyCabs.Domain.Entities;
 
 namespace MyCabs.Api.Controllers;
 
@@ -17,8 +18,18 @@ public class DriversController : ControllerBase
     private readonly IDriverRepository _drivers;
     private readonly ICompanyRepository _companies;
     private readonly IHiringService _hiring;
-    public DriversController(IDriverService svc, IDriverRepository drivers, ICompanyRepository companies, IHiringService hiring) { _svc = svc; _drivers = drivers; _companies = companies; _hiring = hiring; }
+    private readonly IWalletRepository _wallets;
+    private readonly ITransactionRepository _txs;
+    public DriversController(
+        IDriverService svc,
+        IDriverRepository drivers,
+        ICompanyRepository companies,
+        IHiringService hiring,
+        IWalletRepository wallets,
+        ITransactionRepository txs)
+    { _svc = svc; _drivers = drivers; _companies = companies; _hiring = hiring; _wallets = wallets; _txs = txs; }
 
+    private string CurrentUserId() => User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub") ?? string.Empty;
 
     [HttpGet("openings")]
     public async Task<IActionResult> Openings(
@@ -27,10 +38,7 @@ public class DriversController : ControllerBase
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20)
     {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-             ?? User.FindFirstValue("sub")
-             ?? string.Empty;
-        var me = await _drivers.GetByDriverIdAsync(userId);
+        var me = await _drivers.GetByUserIdAsync(CurrentUserId());
         var (items, total) = await _companies.FindAsync(page, pageSize, search, plan: null, serviceType: serviceType, sort: null);
 
         var now = DateTime.UtcNow;
@@ -55,15 +63,12 @@ public class DriversController : ControllerBase
     [HttpPost("apply")]
     public async Task<IActionResult> Apply([FromBody] DriverApplyDto dto, [FromServices] IHiringService hiring)
     {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                     ?? User.FindFirstValue("sub")
-                     ?? string.Empty;
-        if (string.IsNullOrEmpty(userId))
+        if (string.IsNullOrEmpty(CurrentUserId()))
             return Unauthorized(ApiEnvelope.Fail(HttpContext, "UNAUTHORIZED", "Authentication is required", 401));
 
         try
         {
-            await hiring.ApplyAsync(userId, dto);
+            await hiring.ApplyAsync(CurrentUserId(), dto);
             return Ok(ApiEnvelope.Ok(HttpContext, new { message = "Application submitted" }));
         }
         catch (InvalidOperationException ex) when (ex.Message == "COMPANY_NOT_FOUND")
@@ -80,13 +85,12 @@ public class DriversController : ControllerBase
     [HttpPost("invitations/{inviteId}/respond")]
     public async Task<IActionResult> Respond(string inviteId, [FromBody] InvitationRespondDto dto)
     {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub") ?? string.Empty;
-        if (string.IsNullOrEmpty(userId))
+        if (string.IsNullOrEmpty(CurrentUserId()))
             return Unauthorized(ApiEnvelope.Fail(HttpContext, "UNAUTHORIZED", "Authentication is required", 401));
 
         try
         {
-            await _svc.RespondInvitationAsync(userId, inviteId, dto.Action);
+            await _svc.RespondInvitationAsync(CurrentUserId(), inviteId, dto.Action);
             return Ok(ApiEnvelope.Ok(HttpContext, new { message = "Invitation updated" }));
         }
         catch (InvalidOperationException ex) when (ex.Message == "INVITATION_NOT_FOUND")
@@ -100,8 +104,7 @@ public class DriversController : ControllerBase
     [HttpGet("me/transactions")]
     public async Task<IActionResult> MyTransactions([FromQuery] TransactionsQuery q, [FromServices] IFinanceService finance)
     {
-        var uid = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub") ?? string.Empty;
-        var d = await _drivers.GetByDriverIdAsync(uid);
+        var d = await _drivers.GetByUserIdAsync(CurrentUserId());
         if (d is null) return NotFound(ApiEnvelope.Fail(HttpContext, "DRIVER_NOT_FOUND", "Driver not found", 404));
         var (items, total) = await finance.GetDriverTransactionsAsync(d.Id.ToString(), q);
         return Ok(ApiEnvelope.Ok(HttpContext, new PagedResult<TransactionDto>(items, q.Page, q.PageSize, total)));
@@ -109,32 +112,49 @@ public class DriversController : ControllerBase
 
     [Authorize(Roles = "Driver")]
     [HttpGet("me/wallet")]
-    public async Task<IActionResult> MyWallet([FromServices] IFinanceService finance)
+    public async Task<IActionResult> MyWallet()
     {
-        var uid = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub") ?? string.Empty;
-        var d = await _drivers.GetByDriverIdAsync(uid);
-        if (d is null) return NotFound(ApiEnvelope.Fail(HttpContext, "DRIVER_NOT_FOUND", "Driver not found", 404));
-        return Ok(ApiEnvelope.Ok(HttpContext, await finance.GetDriverWalletAsync(d.Id.ToString())));
+        var me = await _drivers.GetByUserIdAsync(CurrentUserId());
+        if (me == null) return NotFound(ApiEnvelope.Fail(HttpContext, "DRIVER_NOT_FOUND", "Driver not found", 404));
+
+
+        var w = await _wallets.GetOrCreateAsync("Driver", me.Id.ToString()); // auto-create if missing
+        return Ok(ApiEnvelope.Ok(HttpContext, new
+        {
+            id = w.Id.ToString(),
+            ownerType = w.OwnerType,
+            ownerId = w.OwnerId.ToString(),
+            balance = w.Balance
+        }));
     }
 
     [Authorize(Roles = "Driver")]
     [HttpGet("me/applications")]
-    public async Task<IActionResult> MyApplications(
-    [FromServices] IApplicationsQueryService svc, 
-    [FromQuery] int page = 1,
-    [FromQuery] int pageSize = 20)
+    public async Task<IActionResult> MyTransactions([FromQuery] int page = 1, [FromQuery] int pageSize = 10)
     {
-        var me = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
-        var data = await svc.GetByDriverAsync(me, page, pageSize);
-        return Ok(ApiEnvelope.Ok(HttpContext, data));
+        var me = await _drivers.GetByUserIdAsync(CurrentUserId());
+        if (me == null) return NotFound(ApiEnvelope.Fail(HttpContext, "DRIVER_NOT_FOUND", "Driver not found", 404));
+
+
+        var w = await _wallets.GetOrCreateAsync("Driver", me.Id.ToString());
+        var (items, total) = await _txs.FindByWalletAsync(w.Id.ToString(), page, pageSize);
+        var list = items.Select(t => new
+        {
+            id = t.Id.ToString(),
+            type = t.Type,
+            status = t.Status,
+            amount = t.Amount,
+            note = t.Note,
+            createdAt = t.CreatedAt
+        });
+        return Ok(ApiEnvelope.Ok(HttpContext, new PagedResult<object>(list, page, pageSize, total)));
     }
 
     [Authorize(Roles = "Driver")]
     [HttpGet("me/invitations")]
     public async Task<IActionResult> MyInvitations([FromServices] IHiringService hiring, [FromQuery] InvitationsQuery q)
     {
-        var uid = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub") ?? string.Empty;
-        try { var (items, total) = await hiring.GetMyInvitationsAsync(uid, q); return Ok(ApiEnvelope.Ok(HttpContext, new PagedResult<InvitationDto>(items, q.Page, q.PageSize, total))); }
+        try { var (items, total) = await hiring.GetMyInvitationsAsync(CurrentUserId(), q); return Ok(ApiEnvelope.Ok(HttpContext, new PagedResult<InvitationDto>(items, q.Page, q.PageSize, total))); }
         catch (InvalidOperationException ex) when (ex.Message == "DRIVER_NOT_FOUND") { return NotFound(ApiEnvelope.Fail(HttpContext, "DRIVER_NOT_FOUND", "Driver not found", 404)); }
     }
 }

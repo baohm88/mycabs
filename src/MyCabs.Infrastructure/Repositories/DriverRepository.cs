@@ -10,9 +10,40 @@ namespace MyCabs.Infrastructure.Repositories;
 public class DriverRepository : IDriverRepository, IIndexInitializer
 {
     private readonly IMongoCollection<Driver> _col;
-    public DriverRepository(IMongoContext ctx)
+    private readonly IWalletRepository _wallets;
+    private readonly ITransactionRepository _txs;
+    public DriverRepository(IMongoContext ctx, IWalletRepository wallets, ITransactionRepository txs)
     {
         _col = ctx.GetCollection<Driver>("drivers");
+        _wallets = wallets;
+        _txs = txs;
+    }
+
+    private async Task EnsureWalletInitAsync(string driverId)
+    {
+        // Nếu đã có ví thì thôi
+        var w = await _wallets.GetByOwnerAsync("Driver", driverId);
+
+        if (w == null)
+        {
+            w = await _wallets.GetOrCreateAsync("Driver", driverId);
+
+            // Ghi 1 transaction “WalletInit” amount=0 để trace lịch sử
+            var tx = new Transaction
+            {
+                Id = ObjectId.GenerateNewId(),
+                Type = "WalletInit",
+                Status = "Completed",
+                Amount = 0M,
+                FromWalletId = null,
+                ToWalletId = w.Id,
+                CompanyId = null,
+                DriverId = ObjectId.Parse(driverId),
+                Note = "Driver wallet created",
+                CreatedAt = DateTime.UtcNow
+            };
+            await _txs.CreateAsync(tx);
+        }
     }
 
     public async Task<Driver?> GetByDriverIdAsync(string driverId)
@@ -21,14 +52,29 @@ public class DriverRepository : IDriverRepository, IIndexInitializer
         return await _col.Find(x => x.Id == uid).FirstOrDefaultAsync();
     }
 
+    public async Task<Driver?> GetByUserIdAsync(string userId)
+    {
+        if (!ObjectId.TryParse(userId, out var uid)) return null;
+        return await _col.Find(x => x.UserId == uid).FirstOrDefaultAsync();
+    }
 
     public async Task<Driver> CreateIfMissingAsync(string userId)
     {
         if (!ObjectId.TryParse(userId, out var uid)) throw new ArgumentException("Invalid userId");
-        var d = await _col.Find(x => x.UserId == uid).FirstOrDefaultAsync();
-        if (d != null) return d;
-        d = new Driver { Id = ObjectId.GenerateNewId(), UserId = uid, Status = "available" };
+
+        var exist = await _col.Find(x => x.UserId == ObjectId.Parse(userId)).FirstOrDefaultAsync();
+        if (exist != null) return exist;
+
+        var d = new Driver
+        {
+            Id = ObjectId.GenerateNewId(),
+            UserId = ObjectId.Parse(userId),
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
         await _col.InsertOneAsync(d);
+
+        await EnsureWalletInitAsync(d.Id.ToString()); // NEW: hook init ví + tx
         return d;
     }
 

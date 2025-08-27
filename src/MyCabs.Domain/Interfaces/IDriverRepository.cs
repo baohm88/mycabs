@@ -6,6 +6,7 @@ public interface IDriverRepository
 {
     Task<(IEnumerable<Driver> Items, long Total)> FindAsync(int page, int pageSize, string? search, string? companyId, string? sort);
     Task<Driver?> GetByDriverIdAsync(string driverId);
+    Task<Driver?> GetByUserIdAsync(string userId);
     Task<Driver> CreateIfMissingAsync(string userId);
     Task SetCompanyAsync(string driverId, string companyId);
     Task<Driver> EnsureForUserAsync(string userId, string? phone = null, string? bio = null);

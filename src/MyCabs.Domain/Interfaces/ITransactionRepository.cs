@@ -13,4 +13,5 @@ public interface ITransactionRepository
         string driverId, int page, int pageSize, string? type, string? status);
 
     Task EnsureIndexesAsync();
+    Task<(IEnumerable<Transaction> Items, long Total)> FindByWalletAsync(string walletId, int page, int pageSize);
 }
