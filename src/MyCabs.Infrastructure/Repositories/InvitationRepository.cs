@@ -64,4 +64,50 @@ public class InvitationRepository : IInvitationRepository, IIndexInitializer
         var items = await _col.Find(f).SortByDescending(x => x.CreatedAt).Skip((page - 1) * pageSize).Limit(pageSize).ToListAsync();
         return (items, total);
     }
+
+    public Task<(IEnumerable<Invitation> Items, long Total)> FindByDriverIdAsync(string driverId, int page, int pageSize)
+    => FindForDriverAsync(driverId, page, pageSize, status: null);
+
+
+    public async Task<(IEnumerable<Invitation> Items, long Total)> FindForCandidateAsync(
+    int page, int pageSize,
+    string? candidateDriverId,
+    string? candidateEmail,
+    string? status = null)
+    {
+        var filters = new List<FilterDefinition<Invitation>>();
+
+        if (!string.IsNullOrWhiteSpace(candidateDriverId) && ObjectId.TryParse(candidateDriverId, out var did))
+            filters.Add(Builders<Invitation>.Filter.Eq(x => x.DriverId, did));
+
+        if (!string.IsNullOrWhiteSpace(candidateEmail))
+        {
+            var email = candidateEmail.Trim().ToLowerInvariant();
+            // tuỳ entity, thử nhiều tên field string:
+            var emailOr = Builders<Invitation>.Filter.Or(
+                Builders<Invitation>.Filter.Eq("emailLower", email),
+                Builders<Invitation>.Filter.Eq("candidateEmailLower", email),
+                Builders<Invitation>.Filter.Eq("EmailLower", email),
+                Builders<Invitation>.Filter.Eq("Email", email)
+            );
+            filters.Add(emailOr);
+        }
+
+        if (filters.Count == 0)
+            return (Enumerable.Empty<Invitation>(), 0);
+
+        var f = Builders<Invitation>.Filter.Or(filters);
+        if (!string.IsNullOrWhiteSpace(status))
+            f &= Builders<Invitation>.Filter.Eq(x => x.Status, status);
+
+        var total = await _col.CountDocumentsAsync(f);
+        var items = await _col.Find(f)
+            .SortByDescending(x => x.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Limit(pageSize)
+            .ToListAsync();
+
+        return (items, total);
+    }
+
 }

@@ -158,4 +158,26 @@ public class CompanyRepository : ICompanyRepository, IIndexInitializer
         var f = Builders<Company>.Filter.In(x => x.Id, oids);
         return await _col.Find(f).ToListAsync();
     }
+
+    // public async Task<IReadOnlyList<Company>> GetManyByIdsAsync(IEnumerable<string> ids)
+    // {
+    //     var oids = ids.Where(MongoDB.Bson.ObjectId.TryParse)
+    //                   .Select(MongoDB.Bson.ObjectId.Parse)
+    //                   .ToArray();
+    //     if (oids.Length == 0) return Array.Empty<Company>();
+    //     var f = Builders<Company>.Filter.In(x => x.Id, oids);
+    //     return await _col.Find(f).ToListAsync();
+    // }
+    public async Task<IReadOnlyList<Company>> GetManyByIdsAsync(IEnumerable<string> ids)
+    {
+        var oids = ids
+            .Where(s => MongoDB.Bson.ObjectId.TryParse(s, out _))
+            .Select(MongoDB.Bson.ObjectId.Parse)
+            .ToArray();
+
+        if (oids.Length == 0) return Array.Empty<Company>();
+        var f = Builders<Company>.Filter.In(x => x.Id, oids);
+        return await _col.Find(f).ToListAsync();
+    }
+
 }

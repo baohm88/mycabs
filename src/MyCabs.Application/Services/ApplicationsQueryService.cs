@@ -11,7 +11,7 @@ public interface IApplicationsQueryService
 
 public class ApplicationsQueryService : IApplicationsQueryService
 {
-    private readonly IApplicationRepository _apps;   // giả định bạn đã có repo domain Applications
+    private readonly IApplicationRepository _apps;
     private readonly IDriverRepository _drivers;
     private readonly ICompanyRepository _companies;
 

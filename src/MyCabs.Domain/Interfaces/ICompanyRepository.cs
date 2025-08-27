@@ -16,5 +16,6 @@ public interface ICompanyRepository
     Task<Company> CreateAsync(Company c);
     Task<Company> UpsertMainByOwnerAsync(string ownerUserId, string? name, string? description, string? address);
     Task<IEnumerable<Company>> GetByIdsAsync(IEnumerable<string> ids);
+    Task<IReadOnlyList<Company>> GetManyByIdsAsync(IEnumerable<string> ids);
 
 }

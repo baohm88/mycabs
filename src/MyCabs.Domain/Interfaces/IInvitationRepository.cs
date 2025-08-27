@@ -9,5 +9,13 @@ public interface IInvitationRepository
     Task EnsureIndexesAsync();
     Task CreateAsync(string companyId, string driverId, string? note);
     Task<(IEnumerable<Invitation> Items, long Total)> FindForCompanyAsync(string companyId, int page, int pageSize, string? status);
+    Task<(IEnumerable<Invitation> Items, long Total)> FindByDriverIdAsync(string driverId, int page, int pageSize);
+
     Task<(IEnumerable<Invitation> Items, long Total)> FindForDriverAsync(string driverId, int page, int pageSize, string? status);
+    Task<(IEnumerable<Invitation> Items, long Total)> FindForCandidateAsync(
+        int page, int pageSize,
+        string? candidateDriverId,
+        string? candidateEmail,
+        string? status = null
+    );
 }

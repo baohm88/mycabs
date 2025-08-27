@@ -15,7 +15,8 @@ public interface IHiringService
     Task RejectApplicationAsync(string companyId, string appId);
     Task InviteDriverAsync(string companyId, InviteDriverDto dto);
     Task<(IEnumerable<InvitationDto> Items, long Total)> GetCompanyInvitationsAsync(string companyId, InvitationsQuery q);
-    Task<(IEnumerable<InvitationDto> Items, long Total)> GetMyInvitationsAsync(string userId, InvitationsQuery q);
+    // Task<(IEnumerable<InvitationDto> Items, long Total)> GetMyInvitationsAsync(string userId, InvitationsQuery q);
+    Task<(IEnumerable<InvitationDto> items, long total)> GetMyInvitationsAsync(string currentUserId, InvitationsQuery q);
 
 }
 
@@ -25,9 +26,15 @@ public class HiringService : IHiringService
     private readonly IInvitationRepository _invites;
     private readonly IDriverRepository _drivers;
     private readonly ICompanyRepository _companies;
+    private readonly IUserRepository _users;
 
-    public HiringService(IApplicationRepository apps, IInvitationRepository invites, IDriverRepository drivers, ICompanyRepository companies)
-    { _apps = apps; _invites = invites; _drivers = drivers; _companies = companies; }
+    public HiringService(
+        IApplicationRepository apps,
+        IInvitationRepository invites,
+        IDriverRepository drivers,
+        ICompanyRepository companies,
+        IUserRepository users)
+    { _apps = apps; _invites = invites; _drivers = drivers; _companies = companies; _users = users; }
 
     static ApplicationDto MapApp(MyCabs.Domain.Entities.Application a)
         => new(a.Id.ToString(), a.DriverId.ToString(), a.CompanyId.ToString(), a.Status, a.CreatedAt);
@@ -86,9 +93,24 @@ public class HiringService : IHiringService
         return (dtos, total);
     }
 
+    public async Task<(IEnumerable<InvitationDto> items, long total)> GetMyInvitationsAsync(string currentUserId, InvitationsQuery q)
+    {
+        var user = await _users.GetByIdAsync(currentUserId) ?? throw new InvalidOperationException("USER_NOT_FOUND");
+        var driver = await _drivers.GetByUserIdAsync(currentUserId);
+        var driverId = driver?.Id.ToString();
+        var emailLower = user.EmailLower;
 
-    public async Task<(IEnumerable<InvitationDto> Items, long Total)> GetMyInvitationsAsync(string userId, InvitationsQuery q)
-    { var d = await _drivers.GetByDriverIdAsync(userId) ?? throw new InvalidOperationException("DRIVER_NOT_FOUND"); var (items, total) = await _invites.FindForDriverAsync(d.Id.ToString(), q.Page, q.PageSize, q.Status); return (items.Select(MapInv), total); }
+        var (items, total) = await _invites.FindForCandidateAsync(
+            page: q.Page, pageSize: q.PageSize,
+            candidateDriverId: driverId,
+            candidateEmail: emailLower,
+            status: q.Status
+        );
+
+        return (items.Select(MapInv), total);
+    }
+
+
 
     public async Task ApproveApplicationAsync(string companyId, string appId)
     {

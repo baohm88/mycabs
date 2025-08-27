@@ -6,6 +6,7 @@ using MyCabs.Application.DTOs;
 using MyCabs.Application.Services;
 using MyCabs.Domain.Interfaces;
 using MyCabs.Domain.Entities;
+using MongoDB.Bson;
 
 namespace MyCabs.Api.Controllers;
 
@@ -20,14 +21,16 @@ public class DriversController : ControllerBase
     private readonly IHiringService _hiring;
     private readonly IWalletRepository _wallets;
     private readonly ITransactionRepository _txs;
+    private readonly IInvitationRepository _invites;
     public DriversController(
         IDriverService svc,
         IDriverRepository drivers,
         ICompanyRepository companies,
         IHiringService hiring,
         IWalletRepository wallets,
-        ITransactionRepository txs)
-    { _svc = svc; _drivers = drivers; _companies = companies; _hiring = hiring; _wallets = wallets; _txs = txs; }
+        ITransactionRepository txs,
+        IInvitationRepository invites)
+    { _svc = svc; _drivers = drivers; _companies = companies; _hiring = hiring; _wallets = wallets; _txs = txs; _invites = invites; }
 
     private string CurrentUserId() => User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub") ?? string.Empty;
 
@@ -51,7 +54,8 @@ public class DriversController : ControllerBase
             (c.Services ?? new List<MyCabs.Domain.Entities.CompanyServiceItem>())
                 .Select(s => new DriverOpeningServiceDto(s.Type, s.Title, s.BasePrice)),
             // CanApply rules: chưa là nhân viên của company đó, company còn hạn (nếu có), có ít nhất 1 service
-            (me?.CompanyId == null || me.CompanyId != c.Id)
+            // (me?.CompanyId == null || me.CompanyId != c.Id)
+            ((me == null) || me.CompanyId == ObjectId.Empty || me.CompanyId != c.Id)
             && (c.Membership?.ExpiresAt == null || c.Membership!.ExpiresAt > now)
             && (c.Services != null && c.Services.Count > 0)
         ));
@@ -130,7 +134,7 @@ public class DriversController : ControllerBase
 
     [Authorize(Roles = "Driver")]
     [HttpGet("me/applications")]
-    public async Task<IActionResult> MyTransactions([FromQuery] int page = 1, [FromQuery] int pageSize = 10)
+    public async Task<IActionResult> MyApplications([FromQuery] int page = 1, [FromQuery] int pageSize = 10)
     {
         var me = await _drivers.GetByUserIdAsync(CurrentUserId());
         if (me == null) return NotFound(ApiEnvelope.Fail(HttpContext, "DRIVER_NOT_FOUND", "Driver not found", 404));
@@ -152,9 +156,35 @@ public class DriversController : ControllerBase
 
     [Authorize(Roles = "Driver")]
     [HttpGet("me/invitations")]
-    public async Task<IActionResult> MyInvitations([FromServices] IHiringService hiring, [FromQuery] InvitationsQuery q)
+    public async Task<IActionResult> MyInvitations([FromQuery] int page = 1, [FromQuery] int pageSize = 10)
     {
-        try { var (items, total) = await hiring.GetMyInvitationsAsync(CurrentUserId(), q); return Ok(ApiEnvelope.Ok(HttpContext, new PagedResult<InvitationDto>(items, q.Page, q.PageSize, total))); }
-        catch (InvalidOperationException ex) when (ex.Message == "DRIVER_NOT_FOUND") { return NotFound(ApiEnvelope.Fail(HttpContext, "DRIVER_NOT_FOUND", "Driver not found", 404)); }
+        var uid = CurrentUserId();
+        var driver = await _drivers.GetByUserIdAsync(uid);
+        if (driver == null)
+            return Ok(ApiEnvelope.Ok(HttpContext, new PagedResult<MyInvitationDto>(Enumerable.Empty<MyInvitationDto>(), page, pageSize, 0)));
+
+        var (items, total) = await _invites.FindByDriverIdAsync(driver.Id.ToString(), page, pageSize);
+
+        // CompanyId là ObjectId (không nullable) => lọc bằng ObjectId.Empty
+        var companyIds = items
+            .Where(x => x.CompanyId != ObjectId.Empty)
+            .Select(x => x.CompanyId.ToString())
+            .Distinct()
+            .ToArray();
+
+        var companies = await _companies.GetManyByIdsAsync(companyIds);
+        var nameById = companies.ToDictionary(c => c.Id.ToString(), c => c.Name);
+
+        var dto = items.Select(x => new MyInvitationDto(
+            Id: x.Id.ToString(),
+            CompanyId: x.CompanyId != ObjectId.Empty ? x.CompanyId.ToString() : "",
+            CompanyName: x.CompanyId != ObjectId.Empty && nameById.TryGetValue(x.CompanyId.ToString(), out var nm) ? nm : null,
+            DriverId: x.DriverId != ObjectId.Empty ? x.DriverId.ToString() : "",
+            Status: x.Status,
+            CreatedAt: x.CreatedAt,
+            Note: x.Note
+        ));
+
+        return Ok(ApiEnvelope.Ok(HttpContext, new PagedResult<MyInvitationDto>(dto, page, pageSize, total)));
     }
 }
