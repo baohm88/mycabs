@@ -19,7 +19,7 @@ public class Driver
     public ObjectId? CompanyId { get; set; }
 
     [BsonElement("status")]
-    public string Status { get; set; } = "offline"; // available|busy|offline
+    public string Status { get; set; } = "available"; // available\hired
 
     [BsonElement("createdAt")]
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

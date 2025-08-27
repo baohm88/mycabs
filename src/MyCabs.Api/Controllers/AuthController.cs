@@ -45,7 +45,7 @@ public class AuthController : ControllerBase
         object? driver = null;
         if (isDriver)
         {
-            var d = await _drivers.GetByUserIdAsync(userId)
+            var d = await _drivers.GetByDriverIdAsync(userId)
                 ?? await _drivers.UpsertMainByUserAsync(userId, u.FullName, null, null);
             driver = new { id = d.Id.ToString(), userId = d.UserId.ToString(), companyId = d.CompanyId?.ToString(), status = d.Status, phone = d.Phone, bio = d.Bio };
         }

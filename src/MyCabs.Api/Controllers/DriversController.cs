@@ -30,7 +30,7 @@ public class DriversController : ControllerBase
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
              ?? User.FindFirstValue("sub")
              ?? string.Empty;
-        var me = await _drivers.GetByUserIdAsync(userId);
+        var me = await _drivers.GetByDriverIdAsync(userId);
         var (items, total) = await _companies.FindAsync(page, pageSize, search, plan: null, serviceType: serviceType, sort: null);
 
         var now = DateTime.UtcNow;
@@ -101,7 +101,7 @@ public class DriversController : ControllerBase
     public async Task<IActionResult> MyTransactions([FromQuery] TransactionsQuery q, [FromServices] IFinanceService finance)
     {
         var uid = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub") ?? string.Empty;
-        var d = await _drivers.GetByUserIdAsync(uid);
+        var d = await _drivers.GetByDriverIdAsync(uid);
         if (d is null) return NotFound(ApiEnvelope.Fail(HttpContext, "DRIVER_NOT_FOUND", "Driver not found", 404));
         var (items, total) = await finance.GetDriverTransactionsAsync(d.Id.ToString(), q);
         return Ok(ApiEnvelope.Ok(HttpContext, new PagedResult<TransactionDto>(items, q.Page, q.PageSize, total)));
@@ -112,7 +112,7 @@ public class DriversController : ControllerBase
     public async Task<IActionResult> MyWallet([FromServices] IFinanceService finance)
     {
         var uid = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub") ?? string.Empty;
-        var d = await _drivers.GetByUserIdAsync(uid);
+        var d = await _drivers.GetByDriverIdAsync(uid);
         if (d is null) return NotFound(ApiEnvelope.Fail(HttpContext, "DRIVER_NOT_FOUND", "Driver not found", 404));
         return Ok(ApiEnvelope.Ok(HttpContext, await finance.GetDriverWalletAsync(d.Id.ToString())));
     }

@@ -94,7 +94,7 @@ public class FinanceService : IFinanceService
     public async Task<(bool ok, string? err)> PaySalaryAsync(string companyId, PaySalaryDto dto)
     {
         var compW = await _wallets.GetOrCreateAsync("Company", companyId);
-        var driver = await _drivers.GetByUserIdAsync(dto.DriverId) ?? throw new InvalidOperationException("DRIVER_NOT_FOUND");
+        var driver = await _drivers.GetByDriverIdAsync(dto.DriverId) ?? throw new InvalidOperationException("DRIVER_NOT_FOUND");
         var drvW = await _wallets.GetOrCreateAsync("Driver", driver.Id.ToString());
         var debited = await _wallets.TryDebitAsync(compW.Id.ToString(), dto.Amount);
         var tx = new Transaction

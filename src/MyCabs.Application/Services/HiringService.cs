@@ -16,6 +16,7 @@ public interface IHiringService
     Task InviteDriverAsync(string companyId, InviteDriverDto dto);
     Task<(IEnumerable<InvitationDto> Items, long Total)> GetCompanyInvitationsAsync(string companyId, InvitationsQuery q);
     Task<(IEnumerable<InvitationDto> Items, long Total)> GetMyInvitationsAsync(string userId, InvitationsQuery q);
+
 }
 
 public class HiringService : IHiringService
@@ -36,7 +37,7 @@ public class HiringService : IHiringService
     public async Task ApplyAsync(string userId, DriverApplyDto dto)
     {
         // Lấy driver theo userId (và tự tạo nếu chưa có để không bị null)
-        var d = await _drivers.GetByUserIdAsync(userId)
+        var d = await _drivers.GetByDriverIdAsync(userId)
               ?? await _drivers.UpsertMainByUserAsync(userId, fullName: null, phone: null, bio: null);
 
         // Tìm company theo Id client gửi
@@ -54,25 +55,11 @@ public class HiringService : IHiringService
     public async Task<(IEnumerable<ApplicationDto> Items, long Total)> GetCompanyApplicationsAsync(string companyId, ApplicationsQuery q)
     { var (items, total) = await _apps.FindForCompanyAsync(companyId, q.Page, q.PageSize, q.Status); return (items.Select(MapApp), total); }
 
-    public async Task ApproveApplicationAsync(string companyId, string appId)
-    {
-        var app = await _apps.GetByIdAsync(appId) ?? throw new InvalidOperationException("APPLICATION_NOT_FOUND");
-        if (app.CompanyId.ToString() != companyId) throw new InvalidOperationException("FORBIDDEN");
-        await _apps.UpdateStatusAsync(appId, "Approved");
-        await _drivers.SetCompanyAsync(app.DriverId.ToString(), companyId);
-    }
-
-    public async Task RejectApplicationAsync(string companyId, string appId)
-    {
-        var app = await _apps.GetByIdAsync(appId) ?? throw new InvalidOperationException("APPLICATION_NOT_FOUND");
-        if (app.CompanyId.ToString() != companyId) throw new InvalidOperationException("FORBIDDEN");
-        await _apps.UpdateStatusAsync(appId, "Rejected");
-    }
 
     public async Task InviteDriverAsync(string companyId, InviteDriverDto dto)
     {
         // từ userId → driver profile
-        var driver = await _drivers.GetByUserIdAsync(dto.DriverUserId) ?? throw new InvalidOperationException("DRIVER_NOT_FOUND");
+        var driver = await _drivers.GetByDriverIdAsync(dto.DriverUserId) ?? throw new InvalidOperationException("DRIVER_NOT_FOUND");
         await _invites.CreateAsync(companyId, driver.Id.ToString(), dto.Note);
     }
 
@@ -81,7 +68,7 @@ public class HiringService : IHiringService
 
     public async Task<(IEnumerable<ApplicationDto> Items, long Total)> GetMyApplicationsAsync(string userId, ApplicationsQuery q)
     {
-        var d = await _drivers.GetByUserIdAsync(userId);
+        var d = await _drivers.GetByDriverIdAsync(userId);
         if (d == null) throw new InvalidOperationException("DRIVER_NOT_FOUND");
 
         // Chuẩn: truy vấn theo driver.Id
@@ -101,5 +88,45 @@ public class HiringService : IHiringService
 
 
     public async Task<(IEnumerable<InvitationDto> Items, long Total)> GetMyInvitationsAsync(string userId, InvitationsQuery q)
-    { var d = await _drivers.GetByUserIdAsync(userId) ?? throw new InvalidOperationException("DRIVER_NOT_FOUND"); var (items, total) = await _invites.FindForDriverAsync(d.Id.ToString(), q.Page, q.PageSize, q.Status); return (items.Select(MapInv), total); }
+    { var d = await _drivers.GetByDriverIdAsync(userId) ?? throw new InvalidOperationException("DRIVER_NOT_FOUND"); var (items, total) = await _invites.FindForDriverAsync(d.Id.ToString(), q.Page, q.PageSize, q.Status); return (items.Select(MapInv), total); }
+
+    public async Task ApproveApplicationAsync(string companyId, string appId)
+    {
+        var app = await _apps.GetByAppIdAsync(appId) ?? throw new InvalidOperationException("APPLICATION_NOT_FOUND");
+        if (app.CompanyId.ToString() != companyId) throw new InvalidOperationException("FORBIDDEN");
+
+        // Idempotent: nếu đã duyệt & driver đã ở đúng công ty thì thoát sớm
+        if (string.Equals(app.Status, "Approved", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        // Kiểm tra driver
+        var driver = await _drivers.GetByDriverIdAsync(app.DriverId.ToString());
+        if (driver == null) throw new InvalidOperationException("DRIVER_NOT_FOUND");
+
+        // Cập nhật application trước
+        await _apps.UpdateAppStatusAsync(appId, "Approved");
+
+        // Hire driver → gán company + set status = hired
+        var ok = await _drivers.AssignDriverToCompanyAndSetStatusAsync(app.DriverId.ToString(), companyId, "hired");
+        if (!ok)
+        {
+            // roll-forward hợp lý: app vẫn approved nhưng báo xung đột để FE biết
+            throw new InvalidOperationException("DRIVER_NOT_AVAILABLE"); // đã thuộc công ty khác
+        }
+
+        // Auto-reject các app Pending khác của cùng driver (tuỳ chọn)
+        _ = _apps.RejectPendingByDriverExceptAsync(app.DriverId.ToString(), appId);
+    }
+
+    public async Task RejectApplicationAsync(string companyId, string appId)
+    {
+        var app = await _apps.GetByAppIdAsync(appId) ?? throw new InvalidOperationException("APPLICATION_NOT_FOUND");
+        if (app.CompanyId.ToString() != companyId) throw new InvalidOperationException("FORBIDDEN");
+
+        if (string.Equals(app.Status, "Approved", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("CANNOT_REJECT_APPROVED");
+
+        await _apps.UpdateAppStatusAsync(appId, "Rejected");
+        // Không đụng vào driver
+    }
 }

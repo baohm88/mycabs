@@ -15,11 +15,12 @@ public class DriverRepository : IDriverRepository, IIndexInitializer
         _col = ctx.GetCollection<Driver>("drivers");
     }
 
-    public async Task<Driver?> GetByUserIdAsync(string userId)
+    public async Task<Driver?> GetByDriverIdAsync(string driverId)
     {
-        if (!ObjectId.TryParse(userId, out var uid)) return null;
-        return await _col.Find(x => x.UserId == uid).FirstOrDefaultAsync();
+        if (!ObjectId.TryParse(driverId, out var uid)) return null;
+        return await _col.Find(x => x.Id == uid).FirstOrDefaultAsync();
     }
+
 
     public async Task<Driver> CreateIfMissingAsync(string userId)
     {
@@ -170,11 +171,7 @@ public class DriverRepository : IDriverRepository, IIndexInitializer
         throw new InvalidOperationException("Upsert failed to return a document.");
     }
 
-    public async Task<Driver?> GetByIdAsync(string id)
-    {
-        if (!ObjectId.TryParse(id, out var oid)) return null;
-        return await _col.Find(x => x.Id == oid).FirstOrDefaultAsync();
-    }
+
 
     public async Task<IEnumerable<Driver>> GetByIdsAsync(IEnumerable<string> ids)
     {
@@ -188,5 +185,23 @@ public class DriverRepository : IDriverRepository, IIndexInitializer
         return await _col.Find(f).ToListAsync();
     }
 
+    // Gán company + set status; idempotent nếu đã đúng công ty & trạng thái
+    public async Task<bool> AssignDriverToCompanyAndSetStatusAsync(string driverId, string companyId, string status)
+    {
+        if (!ObjectId.TryParse(driverId, out var did)) return false;
+        if (!ObjectId.TryParse(companyId, out var cid)) return false;
+
+        var upd = Builders<Driver>.Update
+            .Set(x => x.CompanyId, cid)
+            .Set(x => x.Status, status)
+            .Set(x => x.UpdatedAt, DateTime.UtcNow);
+
+        // chặn hire chéo: chỉ update nếu (chưa có company) hoặc (đã thuộc cùng company)
+        var f = Builders<Driver>.Filter.Eq(x => x.Id, did)
+              & (Builders<Driver>.Filter.Eq(x => x.CompanyId, null) | Builders<Driver>.Filter.Eq(x => x.CompanyId, cid));
+
+        var res = await _col.UpdateOneAsync(f, upd);
+        return res.ModifiedCount > 0;
+    }
 
 }

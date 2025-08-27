@@ -84,18 +84,34 @@ public class CompaniesController : ControllerBase
     [HttpPost("{id}/applications/{appId}/approve")]
     public async Task<IActionResult> ApproveApp(string id, string appId)
     {
-        try { await _hiring.ApproveApplicationAsync(id, appId); return Ok(ApiEnvelope.Ok(HttpContext, new { message = "Approved" })); }
-        catch (InvalidOperationException ex) when (ex.Message == "APPLICATION_NOT_FOUND") { return NotFound(ApiEnvelope.Fail(HttpContext, "APPLICATION_NOT_FOUND", "Application not found", 404)); }
-        catch (InvalidOperationException ex) when (ex.Message == "FORBIDDEN") { return Forbid(); }
+        try
+        {
+            await _hiring.ApproveApplicationAsync(id, appId);
+            return Ok(ApiEnvelope.Ok(HttpContext, new { message = "Approved" }));
+        }
+        catch (InvalidOperationException ex) when (ex.Message == "APPLICATION_NOT_FOUND")
+        { return NotFound(ApiEnvelope.Fail(HttpContext, "APPLICATION_NOT_FOUND", "Application not found", 404)); }
+        catch (InvalidOperationException ex) when (ex.Message == "FORBIDDEN")
+        { return Forbid(); }
+        catch (InvalidOperationException ex) when (ex.Message == "DRIVER_NOT_AVAILABLE")
+        { return Conflict(ApiEnvelope.Fail(HttpContext, "DRIVER_NOT_AVAILABLE", "Driver already hired by another company", 409)); }
     }
 
     [Authorize(Roles = "Company,Admin")]
     [HttpPost("{id}/applications/{appId}/reject")]
     public async Task<IActionResult> RejectApp(string id, string appId)
     {
-        try { await _hiring.RejectApplicationAsync(id, appId); return Ok(ApiEnvelope.Ok(HttpContext, new { message = "Rejected" })); }
-        catch (InvalidOperationException ex) when (ex.Message == "APPLICATION_NOT_FOUND") { return NotFound(ApiEnvelope.Fail(HttpContext, "APPLICATION_NOT_FOUND", "Application not found", 404)); }
-        catch (InvalidOperationException ex) when (ex.Message == "FORBIDDEN") { return Forbid(); }
+        try
+        {
+            await _hiring.RejectApplicationAsync(id, appId);
+            return Ok(ApiEnvelope.Ok(HttpContext, new { message = "Rejected" }));
+        }
+        catch (InvalidOperationException ex) when (ex.Message == "APPLICATION_NOT_FOUND")
+        { return NotFound(ApiEnvelope.Fail(HttpContext, "APPLICATION_NOT_FOUND", "Application not found", 404)); }
+        catch (InvalidOperationException ex) when (ex.Message == "FORBIDDEN")
+        { return Forbid(); }
+        catch (InvalidOperationException ex) when (ex.Message == "CANNOT_REJECT_APPROVED")
+        { return BadRequest(ApiEnvelope.Fail(HttpContext, "CANNOT_REJECT_APPROVED", "Already approved", 400)); }
     }
 
     [Authorize(Roles = "Company,Admin")]

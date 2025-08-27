@@ -10,9 +10,10 @@ public interface IApplicationRepository
     Task<(IEnumerable<Application> Items, long Total)> FindForCompanyAsync(string companyId, int page, int pageSize, string? status);
 
     Task EnsureIndexesAsync();
-    Task<Application?> GetByIdAsync(string appId);
-    Task UpdateStatusAsync(string appId, string status);
+    Task<Application?> GetByAppIdAsync(string appId);
+    Task UpdateAppStatusAsync(string appId, string status);
     Task<(IEnumerable<Application> Items, long Total)> FindByCompanyAsync(string companyId, int page, int pageSize);
 
     Task<(IEnumerable<Application> Items, long Total)> FindByDriverUserAsync(string driverUserId, int page, int pageSize);
+    Task<long> RejectPendingByDriverExceptAsync(string driverId, string exceptAppId);
 }

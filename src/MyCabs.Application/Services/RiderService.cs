@@ -76,7 +76,7 @@ public class RiderService : IRiderService
         }
         else if (dto.TargetType?.ToLowerInvariant() == "driver")
         {
-            var d = await _drivers.GetByUserIdAsync(dto.TargetId);
+            var d = await _drivers.GetByDriverIdAsync(dto.TargetId);
             ownerUserId = d?.UserId.ToString();
             subjectTitle = d?.FullName ?? "Driver";
         }
