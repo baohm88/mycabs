@@ -72,6 +72,7 @@ public class RidersController : ControllerBase
         return Ok(ApiEnvelope.Ok(HttpContext, new PagedResult<object>(shaped, q.Page, q.PageSize, total)));
     }
 
+
     // --- Search Drivers ---
     [AllowAnonymous]
     [HttpGet("drivers")] // /api/riders/drivers?search=&companyId=&sort=&page=&pageSize=
@@ -91,6 +92,13 @@ public class RidersController : ControllerBase
             userNameById[uid] = u?.FullName;
         }
 
+        var userEmailById = new Dictionary<string, string?>();
+        foreach (var uid in userIds)
+        {
+            var u = await _users.GetByIdAsync(uid);
+            userEmailById[uid] = u?.Email;
+        }
+
         var companyNameById = new Dictionary<string, string?>();
         foreach (var cid in companyIds)
         {
@@ -107,6 +115,7 @@ public class RidersController : ControllerBase
             var userId = d.UserId.ToString();
             var companyId = d.CompanyId?.ToString();
             userNameById.TryGetValue(userId, out var fullName);
+            userEmailById.TryGetValue(userId, out var email);
             string? companyName = null;
             if (!string.IsNullOrEmpty(companyId))
                 companyNameById.TryGetValue(companyId!, out companyName);
@@ -115,9 +124,10 @@ public class RidersController : ControllerBase
             {
                 id,
                 userId,
-                fullName,                  // NEW
+                fullName,
                 companyId,
-                companyName,               // NEW
+                companyName,
+                email,
                 status = d.Status,
                 phone = d.Phone,
                 bio = d.Bio,
@@ -131,7 +141,7 @@ public class RidersController : ControllerBase
 
     // --- Ratings ---
     [Authorize(Roles = "Rider")]
-    [HttpPost("ratings")] // body: CreateRatingDto
+    [HttpPost("ratings")]
     public async Task<IActionResult> CreateRating([FromBody] CreateRatingDto dto)
     {
         var uid = CurrentUserId();
