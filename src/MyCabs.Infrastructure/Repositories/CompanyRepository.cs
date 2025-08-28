@@ -10,10 +10,7 @@ namespace MyCabs.Infrastructure.Repositories;
 public class CompanyRepository : ICompanyRepository, IIndexInitializer
 {
     private readonly IMongoCollection<Company> _col;
-    public CompanyRepository(IMongoContext ctx)
-    {
-        _col = ctx.GetCollection<Company>("companies");
-    }
+    public CompanyRepository(IMongoContext ctx) { _col = ctx.GetCollection<Company>("companies"); }
 
     public async Task<(IEnumerable<Company> Items, long Total)> FindAsync(
         int page, int pageSize, string? search, string? plan, string? serviceType, string? sort)
@@ -159,15 +156,6 @@ public class CompanyRepository : ICompanyRepository, IIndexInitializer
         return await _col.Find(f).ToListAsync();
     }
 
-    // public async Task<IReadOnlyList<Company>> GetManyByIdsAsync(IEnumerable<string> ids)
-    // {
-    //     var oids = ids.Where(MongoDB.Bson.ObjectId.TryParse)
-    //                   .Select(MongoDB.Bson.ObjectId.Parse)
-    //                   .ToArray();
-    //     if (oids.Length == 0) return Array.Empty<Company>();
-    //     var f = Builders<Company>.Filter.In(x => x.Id, oids);
-    //     return await _col.Find(f).ToListAsync();
-    // }
     public async Task<IReadOnlyList<Company>> GetManyByIdsAsync(IEnumerable<string> ids)
     {
         var oids = ids
@@ -180,4 +168,27 @@ public class CompanyRepository : ICompanyRepository, IIndexInitializer
         return await _col.Find(f).ToListAsync();
     }
 
+    public async Task<bool> UpdateProfileByOwnerAsync(
+        string ownerUserId,
+        string? name,
+        string? description,
+        string? address,
+        List<CompanyServiceItem>? services,
+        MembershipInfo? membership)
+    {
+        if (!ObjectId.TryParse(ownerUserId, out var oid)) return false;
+
+        var upd = new List<UpdateDefinition<Company>>();
+        if (name != null) upd.Add(Builders<Company>.Update.Set(x => x.Name, name));
+        if (description != null) upd.Add(Builders<Company>.Update.Set(x => x.Description, description));
+        if (address != null) upd.Add(Builders<Company>.Update.Set(x => x.Address, address));
+        if (services != null) upd.Add(Builders<Company>.Update.Set(x => x.Services, services));
+        if (membership != null) upd.Add(Builders<Company>.Update.Set(x => x.Membership, membership));
+
+        upd.Add(Builders<Company>.Update.Set(x => x.UpdatedAt, DateTime.UtcNow));
+        if (upd.Count == 1) return true; // chỉ set UpdatedAt — coi như ok
+
+        var res = await _col.UpdateOneAsync(x => x.OwnerUserId == oid, Builders<Company>.Update.Combine(upd));
+        return res.ModifiedCount > 0;
+    }
 }

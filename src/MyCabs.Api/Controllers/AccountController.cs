@@ -35,17 +35,16 @@ public class AccountController : ControllerBase
     [HttpPut]
     public async Task<IActionResult> Update([FromBody] UpdateAccountDto dto)
     {
-        var uid = CurrentUserId();
-        var u = await _users.GetByIdAsync(uid);
+        var u = await _users.GetByIdAsync(CurrentUserId());
         if (u == null) return NotFound(ApiEnvelope.Fail(HttpContext, "USER_NOT_FOUND", "User not found", 404));
 
         if (!string.IsNullOrWhiteSpace(dto.FullName))
-            await _users.UpdateFullNameAsync(uid, dto.FullName!.Trim());
+            await _users.UpdateFullNameAsync(CurrentUserId(), dto.FullName!.Trim());
 
         var role = u.Role ?? "Rider";
         if (string.Equals(role, "Driver", StringComparison.OrdinalIgnoreCase))
         {
-            var d = await _drivers.UpsertMainByUserAsync(uid, dto.FullName, dto.DriverPhone, dto.DriverBio);
+            var d = await _drivers.UpsertMainByUserAsync(CurrentUserId(), dto.FullName, dto.DriverPhone, dto.DriverBio);
             return Ok(ApiEnvelope.Ok(HttpContext, new { updated = true, driverId = d?.Id.ToString() }));
         }
 
@@ -53,7 +52,7 @@ public class AccountController : ControllerBase
          || string.Equals(role, "CompanyOwner", StringComparison.OrdinalIgnoreCase))
         {
             // NEW: Upsert by owner → fix “updated=true nhưng không đổi”
-            var c = await _companies.UpsertMainByOwnerAsync(uid, dto.CompanyName, dto.CompanyDescription, dto.CompanyAddress);
+            var c = await _companies.UpsertMainByOwnerAsync(CurrentUserId(), dto.CompanyName, dto.CompanyDescription, dto.CompanyAddress);
             return Ok(ApiEnvelope.Ok(HttpContext, new { updated = true, companyId = c.Id.ToString() }));
         }
 

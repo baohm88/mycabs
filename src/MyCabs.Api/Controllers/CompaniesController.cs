@@ -1,8 +1,12 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
+
 using MyCabs.Api.Common;
 using MyCabs.Application.DTOs;
 using MyCabs.Application.Services;
+using MyCabs.Domain.Entities;
+using MyCabs.Domain.Interfaces;
 
 namespace MyCabs.Api.Controllers;
 
@@ -13,8 +17,65 @@ public class CompaniesController : ControllerBase
     private readonly ICompanyService _svc;
     private readonly IFinanceService _finance;
     private readonly IHiringService _hiring;
-    public CompaniesController(ICompanyService svc, IFinanceService finance, IHiringService hiring)
-    { _svc = svc; _finance = finance; _hiring = hiring; }
+    private readonly ICompanyRepository _companies;
+
+    public CompaniesController(ICompanyService svc, IFinanceService finance, IHiringService hiring, ICompanyRepository companies)
+    { _svc = svc; _finance = finance; _hiring = hiring; _companies = companies; }
+
+    private string CurrentUserId() => User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub") ?? string.Empty;
+
+    public record CompanyServiceItemDto(string? ServiceId, string Type, string Title, decimal basePrice);
+    public record MembershipInfoDto(string Plan, string BillingCycle, DateTime? ExpiresAt);
+    public record UpdateMyCompanyDto(string? Name, string? Description, string? Address, List<CompanyServiceItemDto>? Services, MembershipInfoDto? Membership);
+
+    private static CompanyServiceItem Map(CompanyServiceItemDto d) => new CompanyServiceItem
+    {
+        ServiceId = string.IsNullOrWhiteSpace(d.ServiceId) ? MongoDB.Bson.ObjectId.GenerateNewId().ToString() : d.ServiceId,
+        Type = d.Type,
+        Title = d.Title,
+        BasePrice = d.basePrice
+    };
+
+    private static object MapCompany(Company c) => new
+    {
+        id = c.Id.ToString(),
+        ownerUserId = c.OwnerUserId.ToString(),
+        name = c.Name,
+        description = c.Description,
+        address = c.Address,
+        services = c.Services?.Select(s => new { serviceId = s.ServiceId, type = s.Type, title = s.Title, basePrice = s.BasePrice }),
+        membership = c.Membership == null ? null : new { plan = c.Membership.Plan, billingCycle = c.Membership.BillingCycle, expiresAt = c.Membership.ExpiresAt },
+        createdAt = c.CreatedAt,
+        updatedAt = c.UpdatedAt
+    };
+
+    [HttpGet("me")]
+    public async Task<IActionResult> GetMine()
+    {
+        var me = CurrentUserId();
+        var c = await _companies.GetByOwnerUserIdAsync(me);
+        if (c == null) return NotFound(ApiEnvelope.Fail(HttpContext, "COMPANY_NOT_FOUND", "Company not found", 404));
+        return Ok(ApiEnvelope.Ok(HttpContext, MapCompany(c)));
+    }
+
+    [HttpPut("me")]
+    public async Task<IActionResult> UpdateMine([FromBody] UpdateMyCompanyDto dto)
+    {
+        var me = CurrentUserId();
+
+        List<CompanyServiceItem>? services = null;
+        if (dto.Services != null) services = dto.Services.Select(Map).ToList();
+
+        MembershipInfo? membership = null;
+        if (dto.Membership != null)
+            membership = new MembershipInfo { Plan = dto.Membership.Plan, BillingCycle = dto.Membership.BillingCycle, ExpiresAt = dto.Membership.ExpiresAt };
+
+        var ok = await _companies.UpdateProfileByOwnerAsync(me, dto.Name, dto.Description, dto.Address, services, membership);
+        if (!ok) return NotFound(ApiEnvelope.Fail(HttpContext, "COMPANY_NOT_FOUND", "Company not found", 404));
+
+        var updated = await _companies.GetByOwnerUserIdAsync(me);
+        return Ok(ApiEnvelope.Ok(HttpContext, MapCompany(updated!)));
+    }
 
     [HttpGet]
     public async Task<IActionResult> GetCompanies([FromQuery] CompaniesQuery q)
